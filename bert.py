@@ -101,8 +101,9 @@ class BertLayer(nn.Module):
     """
     # Hint: Remember that BERT applies dropout to the transformed output of each sub-layer,
     # before it is added to the sub-layer input and normalized with a layer norm.
-    ### TODO
-    raise NotImplementedError
+    output = dropout(dense_layer(output))
+    output = output + input
+    return ln_layer(output)
 
 
   def forward(self, hidden_states, attention_mask):
@@ -157,6 +158,7 @@ class BertModel(BertPreTrainedModel):
     seq_length = input_shape[1]
 
     # Get word embedding from self.word_embedding into input_embeds.
+    inputs_embeds = None
     ### TODO
     raise NotImplementedError
 
