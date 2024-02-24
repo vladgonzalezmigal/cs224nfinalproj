@@ -48,10 +48,13 @@ class BertSelfAttention(nn.Module):
     # - Multiply the attention scores with the value to get back weighted values.
     # - Before returning, concatenate multi-heads to recover the original shape:
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
-
-    ### TODO
-    raise NotImplementedError
-
+    S = torch.matmul(query, key.transpose(-2, -1))
+    d_k = key.shape[-1] ** 0.5
+    S = (S + attention_mask) / d_k
+    m = nn.Softmax(dim=-1)
+    softmax_S = m(S)
+    weighted_vals = torch.matmul(softmax_S, value)
+    return torch.cat(weighted_vals, dim=1)
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -154,7 +157,6 @@ class BertModel(BertPreTrainedModel):
     seq_length = input_shape[1]
 
     # Get word embedding from self.word_embedding into input_embeds.
-    inputs_embeds = None
     ### TODO
     raise NotImplementedError
 
