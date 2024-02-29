@@ -71,9 +71,12 @@ class MultitaskBERT(nn.Module):
             elif config.option == 'finetune':
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
-        ### TODO
-        raise NotImplementedError
-
+        self.num_sentiment_labels = 5
+        self.num_paraphrase_labels = 2
+        self.num_similarity_labels = 1
+        self.sentiment_classifier = nn.Linear(self.bert.config.hidden_size, self.num_sentiment_labels)
+        self.paraphrase_classifier = nn.Linear(self.bert.config.hidden_size, self.num_paraphrase_labels)
+        self.similarity_classifier = nn.Linear(self.bert.config.hidden_size, self.num_similarity_labels)
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -81,11 +84,18 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-        ### TODO
-        raise NotImplementedError
+
+        # Pass input IDs and attention masks to BERT model
+        outputs = self.bert.forward(input_ids, attention_mask)
+        # Get embeddings matrix
+        last_hidden_state = outputs.last_hidden_state
+        # Get CLS token representation
+        cls_token_rep = last_hidden_state[:, 0, :]
 
 
-    def predict_sentiment(self, input_ids, attention_mask):
+
+
+def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
