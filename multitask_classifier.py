@@ -97,7 +97,7 @@ class MultitaskBERT(nn.Module):
 
 
 
-def predict_sentiment(self, input_ids, attention_mask):
+    def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
