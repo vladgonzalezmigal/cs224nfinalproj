@@ -1,0 +1,4 @@
+__pycache__/*
+sst-classifier.pt
+cfimdb-classifier.pt
+pretrain-10-1e-05-multitask.pt

@@ -71,9 +71,12 @@ class MultitaskBERT(nn.Module):
             elif config.option == 'finetune':
                 param.requires_grad = True
         # You will want to add layers here to perform the downstream tasks.
-        ### TODO
-        raise NotImplementedError
-
+        self.num_sentiment_labels = 5
+        self.num_paraphrase_labels = 1
+        self.num_similarity_labels = 1
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, self.num_sentiment_labels)
+        self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_paraphrase_labels)
+        self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_similarity_labels)
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -81,9 +84,16 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-        ### TODO
-        raise NotImplementedError
 
+        # Pass input IDs and attention masks to BERT model
+        outputs = self.bert(input_ids, attention_mask)
+        # Get embeddings matrix
+        last_hidden_state = outputs['last_hidden_state']
+        # Get CLS token representation
+        cls_token_rep = last_hidden_state[:, 0, :]
+        # Return logits for all 3 downstream tasks
+        sentiment_logits = self.sentiment_classifier(cls_token_rep)
+        return sentiment_logits
 
     def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
@@ -91,8 +101,8 @@ class MultitaskBERT(nn.Module):
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
         Thus, your output should contain 5 logits for each sentence.
         '''
-        ### TODO
-        raise NotImplementedError
+        sentiment_logits = self.forward(input_ids, attention_mask)
+        return sentiment_logits
 
 
     def predict_paraphrase(self,
@@ -102,8 +112,13 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        ### TODO
-        raise NotImplementedError
+        outputs_1 = self.bert(input_ids_1, attention_mask_1)
+        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        cls_token_rep_1 = outputs_1[0][:, 0, :]
+        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        return self.paraphrase_classifier(combined_embeddings)
+
 
 
     def predict_similarity(self,
@@ -112,8 +127,12 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        ### TODO
-        raise NotImplementedError
+        outputs_1 = self.bert(input_ids_1, attention_mask_1)
+        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        cls_token_rep_1 = outputs_1[0][:, 0, :]
+        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        return self.similarity_classifier(combined_embeddings)
 
 
 
