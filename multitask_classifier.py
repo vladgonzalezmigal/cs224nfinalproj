@@ -78,13 +78,13 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_paraphrase_labels)
         self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_similarity_labels)
 
+
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
         # The final BERT embedding is the hidden state of [CLS] token (the first token)
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-
         # Pass input IDs and attention masks to BERT model
         outputs = self.bert(input_ids, attention_mask)
         # Get embeddings matrix
@@ -95,7 +95,9 @@ class MultitaskBERT(nn.Module):
         sentiment_logits = self.sentiment_classifier(cls_token_rep)
         return sentiment_logits
 
-    def predict_sentiment(self, input_ids, attention_mask):
+
+
+def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
