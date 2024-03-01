@@ -254,7 +254,7 @@ def train_multitask(args):
                 # Linear layer to get logits
                 logits = model.predict_paraphrase(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
                 
-                loss = F.cross_entropy(logits, b_labels.view, reduction='sum') / args.batch_size
+                loss = F.cross_entropy(logits, b_labels, reduction='sum') / args.batch_size
 
                 loss.backward()
                 optimizer.step()
@@ -308,7 +308,7 @@ def train_multitask(args):
                 # Linear layer to get logits
                 logits = model.predict_similarity(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
           
-                loss = F.cross_entropy(logits, b_labels.view, reduction='sum') / args.batch_size
+                loss = F.cross_entropy(logits, b_labels, reduction='sum') / args.batch_size
 
                 loss.backward()
                 optimizer.step()
