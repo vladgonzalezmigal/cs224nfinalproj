@@ -114,10 +114,12 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
-        cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
-        cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-        return cosine_similarity
+        outputs_1 = self.bert(input_ids_1, attention_mask_1)
+        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        cls_token_rep_1 = outputs_1[0][:, 0, :]
+        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        return self.paraphrase_classifier(combined_embeddings)
 
 
 
@@ -127,10 +129,12 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
-        cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
-        cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-        return cosine_similarity
+        outputs_1 = self.bert(input_ids_1, attention_mask_1)
+        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        cls_token_rep_1 = outputs_1[0][:, 0, :]
+        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        return self.similarity_classifier(combined_embeddings)
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -230,55 +234,112 @@ def train_multitask(args):
             sst_train_loss += loss.item()
             sst_num_batches += 1
 
-        for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                batch['token_ids_1'],
-                batch['attention_mask_1'],
-                batch['token_ids_2'],
-                batch['attention_mask_2'],
-                batch['labels']
-            )
-            b_ids_1 = b_input_ids_1.to(device)
-            b_ids_2 = b_input_ids_2.to(device)
-            b_mask_1 = b_mask_1.to(device)
-            b_mask_2 = b_mask_2.to(device)
-            b_labels = b_labels.to(device)
+        if (config.option == 'pretrain'):
+            for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                    batch['token_ids_1'],
+                    batch['attention_mask_1'],
+                    batch['token_ids_2'],
+                    batch['attention_mask_2'],
+                    batch['labels']
+                )
+                b_ids_1 = b_input_ids_1.to(device)
+                b_ids_2 = b_input_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
 
-            optimizer.zero_grad()
-            cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-            cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-            loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+                optimizer.zero_grad()
+                
+                # Linear layer to get logits
+                logits = model.predict_paraphrase(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
+                
+                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
-            loss.backward()
-            optimizer.step()
+                loss.backward()
+                optimizer.step()
 
-            para_train_loss += loss.item()
-            para_num_batches += 1
+                para_train_loss += loss.item()
+                para_num_batches += 1
+        else: 
+            for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                    batch['token_ids_1'],
+                    batch['attention_mask_1'],
+                    batch['token_ids_2'],
+                    batch['attention_mask_2'],
+                    batch['labels']
+                )
+                b_ids_1 = b_input_ids_1.to(device)
+                b_ids_2 = b_input_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
 
-        for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                batch['token_ids_1'],
-                batch['attention_mask_1'],
-                batch['token_ids_2'],
-                batch['attention_mask_2'],
-                batch['labels']
-            )
-            b_ids_1 = b_input_ids_1.to(device)
-            b_ids_2 = b_input_ids_2.to(device)
-            b_mask_1 = b_mask_1.to(device)
-            b_mask_2 = b_mask_2.to(device)
-            b_labels = b_labels.to(device)
+                optimizer.zero_grad()
+                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
-            optimizer.zero_grad()
-            cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-            cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-            loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+                loss.backward()
+                optimizer.step()
 
-            loss.backward()
-            optimizer.step()
+                para_train_loss += loss.item()
+                para_num_batches += 1
+            
+        
+        if (config.option == 'pretrain'):
+            for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                    batch['token_ids_1'],
+                    batch['attention_mask_1'],
+                    batch['token_ids_2'],
+                    batch['attention_mask_2'],
+                    batch['labels']
+                )
+                b_ids_1 = b_input_ids_1.to(device)
+                b_ids_2 = b_input_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
 
-            sts_train_loss += loss.item()
-            sts_num_batches += 1
+                optimizer.zero_grad()
+                
+                # Linear layer to get logits
+                logits = model.predict_similarity(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
+          
+                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
+                loss.backward()
+                optimizer.step()
+
+                sts_train_loss += loss.item()
+                sts_num_batches += 1
+        else:
+            for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                    batch['token_ids_1'],
+                    batch['attention_mask_1'],
+                    batch['token_ids_2'],
+                    batch['attention_mask_2'],
+                    batch['labels']
+                )
+                b_ids_1 = b_input_ids_1.to(device)
+                b_ids_2 = b_input_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
+
+                optimizer.zero_grad()
+                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+
+                loss.backward()
+                optimizer.step()
+
+                sts_train_loss += loss.item()
+                sts_num_batches += 1
 
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
@@ -286,6 +347,7 @@ def train_multitask(args):
 
         sst_train_acc, sst_train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
         sst_dev_acc, sst_dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+        
 
         """
         return (sentiment_accuracy,sst_y_pred, sst_sent_ids,
