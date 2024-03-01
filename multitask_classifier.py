@@ -114,8 +114,8 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        outputs_1 = self.bert(input_ids_1, attention_mask_1)
-        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        outputs_2 = self.forward(input_ids_2, attention_mask_2)
         cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
         cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
         combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
@@ -129,8 +129,8 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        outputs_1 = self.bert(input_ids_1, attention_mask_1)
-        outputs_2 = self.bert(input_ids_2, attention_mask_2)
+        outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        outputs_2 = self.forward(input_ids_2, attention_mask_2)
         cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
         cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
         combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
