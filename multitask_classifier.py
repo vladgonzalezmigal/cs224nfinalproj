@@ -234,112 +234,57 @@ def train_multitask(args):
             sst_train_loss += loss.item()
             sst_num_batches += 1
 
-        if (config.option == 'pretrain'):
-            for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'],
-                    batch['attention_mask_1'],
-                    batch['token_ids_2'],
-                    batch['attention_mask_2'],
-                    batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+        for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+            b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                batch['token_ids_1'],
+                batch['attention_mask_1'],
+                batch['token_ids_2'],
+                batch['attention_mask_2'],
+                batch['labels']
+            )
+            b_ids_1 = b_input_ids_1.to(device)
+            b_ids_2 = b_input_ids_2.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
 
-                optimizer.zero_grad()
-                
-                # Linear layer to get logits
-                logits = model.predict_paraphrase(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
-                
-                loss = F.cross_entropy(logits, b_labels, reduction='mean')
+            optimizer.zero_grad()
+            cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+            cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+            loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
-                loss.backward()
-                optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-                para_train_loss += loss.item()
-                para_num_batches += 1
-        else: 
-            for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'],
-                    batch['attention_mask_1'],
-                    batch['token_ids_2'],
-                    batch['attention_mask_2'],
-                    batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
-
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
-
-                loss.backward()
-                optimizer.step()
-
-                para_train_loss += loss.item()
-                para_num_batches += 1
+            para_train_loss += loss.item()
+            para_num_batches += 1
             
-        
-        if (config.option == 'pretrain'):
-            for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'],
-                    batch['attention_mask_1'],
-                    batch['token_ids_2'],
-                    batch['attention_mask_2'],
-                    batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+        for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+            b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                batch['token_ids_1'],
+                batch['attention_mask_1'],
+                batch['token_ids_2'],
+                batch['attention_mask_2'],
+                batch['labels']
+            )
+            b_ids_1 = b_input_ids_1.to(device)
+            b_ids_2 = b_input_ids_2.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
 
-                optimizer.zero_grad()
-                
-                # Linear layer to get logits
-                logits = model.predict_similarity(b_ids_1,b_mask_1, b_ids_2, b_mask_2)
+            optimizer.zero_grad()
+            cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+            cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+            # mse loss 
           
-                loss = F.cross_entropy(logits, b_labels, reduction='mean') 
+            loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
-                loss.backward()
-                optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-                sts_train_loss += loss.item()
-                sts_num_batches += 1
-        else:
-            for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'],
-                    batch['attention_mask_1'],
-                    batch['token_ids_2'],
-                    batch['attention_mask_2'],
-                    batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
-
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
-
-                loss.backward()
-                optimizer.step()
-
-                sts_train_loss += loss.item()
-                sts_num_batches += 1
+            sts_train_loss += loss.item()
+            sts_num_batches += 1
 
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
