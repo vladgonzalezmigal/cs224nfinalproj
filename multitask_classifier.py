@@ -163,11 +163,11 @@ def train_multitask(args):
     sst_train_data = SentenceClassificationDataset(sst_train_data, args)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
 
-    para_train_data = SentenceClassificationDataset(para_train_data, args)
-    para_dev_data = SentenceClassificationDataset(para_dev_data, args)
+    para_train_data = SentencePairDataset(para_train_data, args)
+    para_dev_data = SentencePairDataset(para_dev_data, args)
 
-    sts_train_data = SentenceClassificationDataset(sts_train_data, args)
-    sts_dev_data = SentenceClassificationDataset(sts_dev_data, args)
+    sts_train_data = SentencePairDataset(sts_train_data, args)
+    sts_dev_data = SentencePairDataset(sts_dev_data, args)
 
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True, batch_size=args.batch_size,
                                       collate_fn=sst_train_data.collate_fn)
@@ -232,9 +232,9 @@ def train_multitask(args):
 
         for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                batch['input_ids_1'],
+                batch['token_ids_1'],
                 batch['attention_mask_1'],
-                batch['input_ids_2'],
+                batch['token_ids_2'],
                 batch['attention_mask_2'],
                 batch['labels']
             )
@@ -257,9 +257,9 @@ def train_multitask(args):
 
         for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                batch['input_ids_1'],
+                batch['token_ids_1'],
                 batch['attention_mask_1'],
-                batch['input_ids_2'],
+                batch['token_ids_2'],
                 batch['attention_mask_2'],
                 batch['labels']
             )
