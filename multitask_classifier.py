@@ -116,8 +116,8 @@ class MultitaskBERT(nn.Module):
         '''
         outputs_1 = self.bert(input_ids_1, attention_mask_1)
         outputs_2 = self.bert(input_ids_2, attention_mask_2)
-        cls_token_rep_1 = outputs_1[0][:, 0, :]
-        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
+        cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
         combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
         return self.paraphrase_classifier(combined_embeddings)
 
@@ -131,8 +131,8 @@ class MultitaskBERT(nn.Module):
         '''
         outputs_1 = self.bert(input_ids_1, attention_mask_1)
         outputs_2 = self.bert(input_ids_2, attention_mask_2)
-        cls_token_rep_1 = outputs_1[0][:, 0, :]
-        cls_token_rep_2 = outputs_2[0][:, 0, :]
+        cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
+        cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
         combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
         return self.similarity_classifier(combined_embeddings)
 
