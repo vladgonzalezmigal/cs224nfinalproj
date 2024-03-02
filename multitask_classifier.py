@@ -115,12 +115,16 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        outputs_1 = self.forward(input_ids_1, attention_mask_1)
-        outputs_2 = self.forward(input_ids_2, attention_mask_2)
-        cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
-        cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
-        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
-        return self.paraphrase_classifier(combined_embeddings)
+        # outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        # outputs_2 = self.forward(input_ids_2, attention_mask_2)
+        # cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
+        # cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
+        # combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        # return self.paraphrase_classifier(combined_embeddings)
+        cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
+        cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
+        cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
+        return cosine_similarity
 
 
 
@@ -130,12 +134,16 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        outputs_1 = self.forward(input_ids_1, attention_mask_1)
-        outputs_2 = self.forward(input_ids_2, attention_mask_2)
-        cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
-        cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
-        combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
-        return self.similarity_classifier(combined_embeddings)
+        # outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        # outputs_2 = self.forward(input_ids_2, attention_mask_2)
+        # cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
+        # cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
+        # combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
+        # return self.similarity_classifier(combined_embeddings)
+        cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
+        cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
+        cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
+        return cosine_similarity
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -212,6 +220,7 @@ def train_multitask(args):
 
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -262,6 +271,7 @@ def train_multitask(args):
                 b_mask_1 = b_mask_1.to(device)
                 b_mask_2 = b_mask_2.to(device)
                 b_labels = b_labels.to(device)
+
 
                 optimizer.zero_grad()
                 cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
