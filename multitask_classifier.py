@@ -13,6 +13,7 @@ writes all required submission files.
 '''
 
 import random, numpy as np, argparse
+import pytorch_lightning as pl
 from types import SimpleNamespace
 
 import torch
@@ -23,7 +24,8 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
-import numpy as np
+
+from pytorch_lightning.utilities.combined_loader import CombinedLoader
 
 from datasets import (
     SentenceClassificationDataset,
@@ -53,42 +55,6 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
-# class CombinedLoader:
-#     def __init__(self, loaders):
-#         self.loaders = loaders
-#         self.dataset_indx = []
-#         self.cumulative_lens = [0]
-
-#         # Populate the dataset indicies list and get the total length
-#         for loader in loaders:
-#             num_samples = len(loader.dataset)
-#             self.dataset_indx.append(np.arange(num_samples))
-#             self.cumulative_lens.append(self.cumulative_lens[-1] + num_samples)
-    
-#     def __iter__(self):
-#         while True:
-#             # Randomly select a dataset
-#             dataset_id = np.random.choice(len(self.loaders))
-
-#             # Randomly sample from the selected dataset
-#             sample_idx = np.random.choice(self.dataset_indx[dataset_id])
-
-#             # Get the relative sample index
-#             # relative_sample_idx = sample_idx - self.cumulative_lens[dataset_id]
-
-#             # Yield sample along with the dataset ID (based on index)
-#             yield self.loaders[dataset_id].dataset[sample_idx], sample_idx, dataset_id
-
-class CombinedSampler:
-    def __init__(self, loaders):
-        self.loaders = loaders
-        self.indices = list(range(len(self.loaders)))
-
-    def __iter__(self):
-        while True:
-            rand_id = random.choice(self.indices)
-            for batch in self.loaders[rand_id]:
-                yield batch, rand_id
 
 class MultitaskBERT(nn.Module):
     '''
@@ -232,10 +198,9 @@ def train_multitask(args):
                                       collate_fn=sts_train_data.collate_fn)
     sts_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sts_dev_data.collate_fn)
-    # train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
-    # dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    train_iterables = [sst_train_dataloader, para_train_dataloader, sts_train_dataloader]
-    combined_loader_train = CombinedSampler(train_iterables)
+    train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
+    dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
+    combined_loader_train = CombinedLoader(train_iterables, 'max_size_cycle')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -262,15 +227,16 @@ def train_multitask(args):
     for epoch in range(args.epochs):
         model.train()
         sst_train_loss = 0
-        sst_num_batches = 0
+        sst_num_batches = 0 
         para_train_loss = 0
         para_num_batches = 0
         sts_train_loss = 0
         sts_num_batches = 0
 
-        for batch, dataloader_idx in combined_loader_train:
+        for batch, batch_idx, dataloader_idx in combined_loader_train:
             if dataloader_idx == 0: # SST task
-                b_ids, b_mask, b_labels = batch['token_ids_1'], batch['attention_mask'], batch['labels']
+                # print(batch)
+                b_ids, b_mask, b_labels = batch['sst']['token_ids'], batch['sst']['attention_mask'], batch['sst']['labels']
 
                 b_ids = b_ids.to(device)
                 b_mask = b_mask.to(device)
@@ -299,9 +265,9 @@ def train_multitask(args):
 
             elif dataloader_idx == 1: # Paraphrase task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'], batch['attention_mask_1'],
-                    batch['token_ids_2'], batch['attention_mask_2'],
-                    batch['labels']
+                    batch['para']['token_ids_1'], batch['para']['attention_mask_1'],
+                    batch['para']['token_ids_2'], batch['para']['attention_mask_2'],
+                    batch['para']['labels']
                 )
                 b_ids_1 = b_input_ids_1.to(device)
                 b_ids_2 = b_input_ids_2.to(device)
@@ -341,9 +307,9 @@ def train_multitask(args):
                     save_model(model, optimizer, args, config, args.filepath)
             elif dataloader_idx == 2: # STS task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['token_ids_1'], batch['attention_mask_1'],
-                    batch['token_ids_2'], batch['attention_mask_2'],
-                    batch['labels']
+                    batch['sts']['token_ids_1'], batch['sts']['attention_mask_1'],
+                    batch['sts']['token_ids_2'], batch['sts']['attention_mask_2'],
+                    batch['sts']['labels']
                 )
                 b_ids_1 = b_input_ids_1.to(device)
                 b_ids_2 = b_input_ids_2.to(device)
