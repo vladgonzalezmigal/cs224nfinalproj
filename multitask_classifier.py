@@ -236,9 +236,9 @@ def train_multitask(args):
 
         for combined_batch in combined_loader_train:
             # Access batches for each task
-            sst_batch = combined_batch['sst']
-            para_batch = combined_batch['para']
-            sts_batch = combined_batch['sts']
+            sst_batch = combined_batch[0]
+            para_batch = combined_batch[1]
+            sts_batch = combined_batch[2]
 
             if sst_batch is not None: # SST task
                 # print(batch)
