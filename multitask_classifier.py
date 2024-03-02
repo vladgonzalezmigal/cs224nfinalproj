@@ -245,13 +245,13 @@ def train_multitask(args):
 
         for combined_batch in combined_loader_train:
             # Access batches for each task
-            sst_batch = combined_batch[0]
-            para_batch = combined_batch[1]
-            sts_batch = combined_batch[2]
+            sst_batch = combined_batch[0]['sst']
+            para_batch = combined_batch[0]['para']
+            sts_batch = combined_batch[0]['sts']
 
             if sst_batch is not None: # SST task
                 # print(batch)
-                b_ids, b_mask, b_labels = sst_batch['sst']['token_ids'], sst_batch['sst']['attention_mask'], sst_batch['sst']['labels']
+                b_ids, b_mask, b_labels = sst_batch['token_ids'], sst_batch['attention_mask'], sst_batch['labels']
 
                 b_ids = b_ids.to(device)
                 b_mask = b_mask.to(device)
@@ -279,9 +279,9 @@ def train_multitask(args):
 
             if para_batch is not None: # Paraphrase task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    para_batch['para']['token_ids_1'], para_batch['para']['attention_mask_1'],
-                    para_batch['para']['token_ids_2'], para_batch['para']['attention_mask_2'],
-                    para_batch['para']['labels']
+                    para_batch['token_ids_1'], para_batch['attention_mask_1'],
+                    para_batch['token_ids_2'], para_batch['attention_mask_2'],
+                    para_batch['labels']
                 )
                 b_ids_1 = b_input_ids_1.to(device)
                 b_ids_2 = b_input_ids_2.to(device)
@@ -320,9 +320,9 @@ def train_multitask(args):
                     para_best_dev_acc = para_dev_acc
             if sts_batch is not None: # STS task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    sts_batch['sts']['token_ids_1'], sts_batch['sts']['attention_mask_1'],
-                    sts_batch['sts']['token_ids_2'], sts_batch['sts']['attention_mask_2'],
-                    sts_batch['sts']['labels']
+                    sts_batch['token_ids_1'], sts_batch['attention_mask_1'],
+                    sts_batch['token_ids_2'], sts_batch['attention_mask_2'],
+                    sts_batch['labels']
                 )
                 b_ids_1 = b_input_ids_1.to(device)
                 b_ids_2 = b_input_ids_2.to(device)
