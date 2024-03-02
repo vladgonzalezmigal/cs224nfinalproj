@@ -234,120 +234,121 @@ def train_multitask(args):
         sts_train_loss = 0
         sts_num_batches = 0
 
-        for batch, batch_idx, dataloader_idx in combined_loader_train:
-            if dataloader_idx == 0: # SST task
-                # print(batch)
-                b_ids, b_mask, b_labels = batch['sst']['token_ids'], batch['sst']['attention_mask'], batch['sst']['labels']
+        for combined_batch in combined_loader_train:
+            for task, batch in combined_batch.items():
+                if task == 'sst': # SST task
+                    # print(batch)
+                    b_ids, b_mask, b_labels = batch['sst']['token_ids'], batch['sst']['attention_mask'], batch['sst']['labels']
 
-                b_ids = b_ids.to(device)
-                b_mask = b_mask.to(device)
-                b_labels = b_labels.to(device)
+                    b_ids = b_ids.to(device)
+                    b_mask = b_mask.to(device)
+                    b_labels = b_labels.to(device)
 
-                optimizer.zero_grad()
-                logits = model.predict_sentiment(b_ids, b_mask)
-                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                    optimizer.zero_grad()
+                    logits = model.predict_sentiment(b_ids, b_mask)
+                    loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
-                loss.backward()
-                optimizer.step()
+                    loss.backward()
+                    optimizer.step()
 
-                sst_train_loss += loss.item()
-                sst_num_batches += 1
+                    sst_train_loss += loss.item()
+                    sst_num_batches += 1
 
-                sst_train_loss = sst_train_loss / (sst_num_batches)
-                sst_train_acc, sst_train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-                sst_dev_acc, sst_dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+                    sst_train_loss = sst_train_loss / (sst_num_batches)
+                    sst_train_acc, sst_train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
+                    sst_dev_acc, sst_dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
 
-                print(
-                    f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}, train acc :: {sst_train_acc :.3f}, dev acc :: {sst_dev_acc :.3f}")
+                    print(
+                        f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}, train acc :: {sst_train_acc :.3f}, dev acc :: {sst_dev_acc :.3f}")
 
-                if sst_dev_acc > sst_best_dev_acc:
-                    sst_best_dev_acc = sst_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
+                    if sst_dev_acc > sst_best_dev_acc:
+                        sst_best_dev_acc = sst_dev_acc
+                        save_model(model, optimizer, args, config, args.filepath)
 
-            elif dataloader_idx == 1: # Paraphrase task
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['para']['token_ids_1'], batch['para']['attention_mask_1'],
-                    batch['para']['token_ids_2'], batch['para']['attention_mask_2'],
-                    batch['para']['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+                elif task == 'para': # Paraphrase task
+                    b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                        batch['para']['token_ids_1'], batch['para']['attention_mask_1'],
+                        batch['para']['token_ids_2'], batch['para']['attention_mask_2'],
+                        batch['para']['labels']
+                    )
+                    b_ids_1 = b_input_ids_1.to(device)
+                    b_ids_2 = b_input_ids_2.to(device)
+                    b_mask_1 = b_mask_1.to(device)
+                    b_mask_2 = b_mask_2.to(device)
+                    b_labels = b_labels.to(device)
 
 
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+                    optimizer.zero_grad()
+                    cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                    cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+                    loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
-                loss.backward()
-                optimizer.step()
+                    loss.backward()
+                    optimizer.step()
 
-                para_train_loss += loss.item()
-                para_num_batches += 1
+                    para_train_loss += loss.item()
+                    para_num_batches += 1
 
-                para_train_loss = para_train_loss / (para_num_batches)
+                    para_train_loss = para_train_loss / (para_num_batches)
 
-                print("Para train accuracy")
-                _, _, _, para_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
-                                                                                        para_train_dataloader,
-                                                                                        sts_train_dataloader, model,
+                    print("Para train accuracy")
+                    _, _, _, para_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
+                                                                                            para_train_dataloader,
+                                                                                            sts_train_dataloader, model,
+                                                                                            device)
+                    print("Para dev accuracy")
+                    _, _, _, para_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
+                                                                                        para_dev_dataloader,
+                                                                                        sts_dev_dataloader, model,
                                                                                         device)
-                print("Para dev accuracy")
-                _, _, _, para_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
-                                                                                    para_dev_dataloader,
-                                                                                    sts_dev_dataloader, model,
-                                                                                    device)
-                print(
-                    f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}, train acc :: {para_train_acc :.3f}, dev acc :: {para_dev_acc :.3f}")
+                    print(
+                        f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}, train acc :: {para_train_acc :.3f}, dev acc :: {para_dev_acc :.3f}")
 
-                if para_dev_acc > para_best_dev_acc:
-                    para_best_dev_acc = para_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
-            elif dataloader_idx == 2: # STS task
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    batch['sts']['token_ids_1'], batch['sts']['attention_mask_1'],
-                    batch['sts']['token_ids_2'], batch['sts']['attention_mask_2'],
-                    batch['sts']['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+                    if para_dev_acc > para_best_dev_acc:
+                        para_best_dev_acc = para_dev_acc
+                        save_model(model, optimizer, args, config, args.filepath)
+                elif task == 'sts': # STS task
+                    b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                        batch['sts']['token_ids_1'], batch['sts']['attention_mask_1'],
+                        batch['sts']['token_ids_2'], batch['sts']['attention_mask_2'],
+                        batch['sts']['labels']
+                    )
+                    b_ids_1 = b_input_ids_1.to(device)
+                    b_ids_2 = b_input_ids_2.to(device)
+                    b_mask_1 = b_mask_1.to(device)
+                    b_mask_2 = b_mask_2.to(device)
+                    b_labels = b_labels.to(device)
 
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+                    optimizer.zero_grad()
+                    cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                    cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
 
-                cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-                loss = mse_loss_fn(cosine_sim, b_labels.float())
+                    cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
+                    loss = mse_loss_fn(cosine_sim, b_labels.float())
 
-                loss.backward()
-                optimizer.step()
+                    loss.backward()
+                    optimizer.step()
 
-                sts_train_loss += loss.item()
-                sts_num_batches += 1
+                    sts_train_loss += loss.item()
+                    sts_num_batches += 1
 
-                sts_train_loss = sts_train_loss / (sts_num_batches)
+                    sts_train_loss = sts_train_loss / (sts_num_batches)
 
-                print("STS train accuracy")
-                _, _, _, _, _, _, sts_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
-                                                                                        para_train_dataloader,
-                                                                                        sts_train_dataloader, model,
+                    print("STS train accuracy")
+                    _, _, _, _, _, _, sts_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
+                                                                                            para_train_dataloader,
+                                                                                            sts_train_dataloader, model,
+                                                                                            device)
+                    print("STS dev accuracy")
+                    _, _, _, _, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
+                                                                                        para_dev_dataloader,
+                                                                                        sts_dev_dataloader, model,
                                                                                         device)
-                print("STS dev accuracy")
-                _, _, _, _, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
-                                                                                    para_dev_dataloader,
-                                                                                    sts_dev_dataloader, model,
-                                                                                    device)
-                print(
-                    f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}, train acc :: {sts_train_acc :.3f}, dev acc :: {sts_dev_acc :.3f}")
-                if sts_dev_acc > sts_best_dev_acc:
-                    sts_best_dev_acc = sts_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
+                    print(
+                        f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}, train acc :: {sts_train_acc :.3f}, dev acc :: {sts_dev_acc :.3f}")
+                    if sts_dev_acc > sts_best_dev_acc:
+                        sts_best_dev_acc = sts_dev_acc
+                        save_model(model, optimizer, args, config, args.filepath)
 
 
 def test_multitask(args):
