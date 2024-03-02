@@ -5,3 +5,4 @@ pretrain-10-1e-05-multitask.pt
 finetune-10-1e-05-multitask.pt
 finetune-10-1e-05-multitask.pt
 pretrain-1-1e-05-multitask.pt
+finetune-1-1e-05-multitask.pt

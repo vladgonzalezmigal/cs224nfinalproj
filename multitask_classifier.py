@@ -13,7 +13,7 @@ writes all required submission files.
 '''
 
 import random, numpy as np, argparse
-import pytorch_lightning as pl
+# import pytorch_lightning as pl 
 from types import SimpleNamespace
 
 import torch
@@ -201,7 +201,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'max_size_cycle')
+    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
