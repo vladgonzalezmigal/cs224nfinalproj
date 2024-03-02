@@ -80,41 +80,15 @@ N_SENTIMENT_CLASSES = 5
 #             yield self.loaders[dataset_id].dataset[sample_idx], sample_idx, dataset_id
 
 class CombinedSampler:
-    def __init__(self, loaders, batch_size=None):
+    def __init__(self, loaders):
         self.loaders = loaders
-        self.batch_size = batch_size
-
-        self.dataset_indices = []
-        self.cumulative_lengths = [0]
-
-        # Populate dataset indices and cumulative lengths
-        for loader in loaders:
-            num_samples = len(loader.dataset)
-            self.dataset_indices.append(np.arange(num_samples))
-            self.cumulative_lengths.append(self.cumulative_lengths[-1] + num_samples)
-
+        self.indices = list(range(len(self.loaders)))
 
     def __iter__(self):
         while True:
-            if self.batch_size is not None:
-                # Randomly select a dataset
-                dataset_idx = np.random.choice(len(self.loaders))
-
-                # Randomly sample batch indices from the selected dataset
-                dataset_indices = self.dataset_indices[dataset_idx]
-                batch_indices = np.random.choice(dataset_indices, size=self.batch_size)
-
-                # Compute the dataset index and relative sample indices
-                dataset_id = dataset_idx
-                # relative_batch_indices = batch_indices - self.cumulative_lengths[dataset_idx]
-
-                # Yield the batch along with dataset ID and relative indices
-                yield batch_indices, [self.loaders[dataset_idx].dataset[idx] for idx in batch_indices], dataset_id
-            else:
-                # If batch_size is not specified, yield individual samples
-                for dataset_idx, loader in enumerate(self.loaders):
-                    for idx, sample in enumerate(loader):
-                        yield idx, sample, dataset_idx
+            rand_id = random.choice(self.indices)
+            for batch in self.loaders[rand_id]:
+                yield batch, rand_id
 
 class MultitaskBERT(nn.Module):
     '''
@@ -294,7 +268,7 @@ def train_multitask(args):
         sts_train_loss = 0
         sts_num_batches = 0
 
-        for batch_idx, batch, dataloader_idx in combined_loader_train:
+        for batch, dataloader_idx in combined_loader_train:
             if dataloader_idx == 0: # SST task
                 b_ids, b_mask, b_labels = batch['token_ids_1'], batch['attention_mask'], batch['labels']
 
