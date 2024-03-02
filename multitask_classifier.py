@@ -53,32 +53,68 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
-class CombinedLoader:
-    def __init__(self, loaders):
-        self.loaders = loaders
-        self.dataset_indx = []
-        self.cumulative_lens = [0]
+# class CombinedLoader:
+#     def __init__(self, loaders):
+#         self.loaders = loaders
+#         self.dataset_indx = []
+#         self.cumulative_lens = [0]
 
-        # Populate the dataset indicies list and get the total length
+#         # Populate the dataset indicies list and get the total length
+#         for loader in loaders:
+#             num_samples = len(loader.dataset)
+#             self.dataset_indx.append(np.arange(num_samples))
+#             self.cumulative_lens.append(self.cumulative_lens[-1] + num_samples)
+    
+#     def __iter__(self):
+#         while True:
+#             # Randomly select a dataset
+#             dataset_id = np.random.choice(len(self.loaders))
+
+#             # Randomly sample from the selected dataset
+#             sample_idx = np.random.choice(self.dataset_indx[dataset_id])
+
+#             # Get the relative sample index
+#             # relative_sample_idx = sample_idx - self.cumulative_lens[dataset_id]
+
+#             # Yield sample along with the dataset ID (based on index)
+#             yield self.loaders[dataset_id].dataset[sample_idx], sample_idx, dataset_id
+
+class CombinedSampler:
+    def __init__(self, loaders, batch_size=None):
+        self.loaders = loaders
+        self.batch_size = batch_size
+
+        self.dataset_indices = []
+        self.cumulative_lengths = [0]
+
+        # Populate dataset indices and cumulative lengths
         for loader in loaders:
             num_samples = len(loader.dataset)
-            self.dataset_indx.append(np.arange(num_samples))
-            self.cumulative_lens.append(self.cumulative_lens[-1] + num_samples)
-    
+            self.dataset_indices.append(np.arange(num_samples))
+            self.cumulative_lengths.append(self.cumulative_lengths[-1] + num_samples)
+
+
     def __iter__(self):
         while True:
-            # Randomly select a dataset
-            dataset_id = np.random.choice(len(self.loaders))
+            if self.batch_size is not None:
+                # Randomly select a dataset
+                dataset_idx = np.random.choice(len(self.loaders))
 
-            # Randomly sample from the selected dataset
-            sample_idx = np.random.choice(self.dataset_indx[dataset_id])
+                # Randomly sample batch indices from the selected dataset
+                dataset_indices = self.dataset_indices[dataset_idx]
+                batch_indices = np.random.choice(dataset_indices, size=self.batch_size)
 
-            # Get the relative sample index
-            # relative_sample_idx = sample_idx - self.cumulative_lens[dataset_id]
+                # Compute the dataset index and relative sample indices
+                dataset_id = dataset_idx
+                # relative_batch_indices = batch_indices - self.cumulative_lengths[dataset_idx]
 
-            # Yield sample along with the dataset ID (based on index)
-            yield self.loaders[dataset_id].dataset[sample_idx], sample_idx, dataset_id
-
+                # Yield the batch along with dataset ID and relative indices
+                yield batch_indices, [self.loaders[dataset_idx].dataset[idx] for idx in batch_indices], dataset_id
+            else:
+                # If batch_size is not specified, yield individual samples
+                for dataset_idx, loader in enumerate(self.loaders):
+                    for idx, sample in enumerate(loader):
+                        yield idx, sample, dataset_idx
 
 class MultitaskBERT(nn.Module):
     '''
@@ -225,7 +261,7 @@ def train_multitask(args):
     # train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     # dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
     train_iterables = [sst_train_dataloader, para_train_dataloader, sts_train_dataloader]
-    combined_loader_train = CombinedLoader(train_iterables)
+    combined_loader_train = CombinedSampler(train_iterables)
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -258,7 +294,7 @@ def train_multitask(args):
         sts_train_loss = 0
         sts_num_batches = 0
 
-        for batch, batch_idx, dataloader_idx in combined_loader_train:
+        for batch_idx, batch, dataloader_idx in combined_loader_train:
             if dataloader_idx == 0: # SST task
                 b_ids, b_mask, b_labels = batch['token_ids_1'], batch['attention_mask'], batch['labels']
 
