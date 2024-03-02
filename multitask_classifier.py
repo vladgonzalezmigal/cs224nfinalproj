@@ -23,7 +23,6 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
-import numpy as np
 
 from datasets import (
     SentenceClassificationDataset,
@@ -52,32 +51,6 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
-
-# class CombinedLoader:
-#     def __init__(self, loaders):
-#         self.loaders = loaders
-#         self.dataset_indx = []
-#         self.cumulative_lens = [0]
-
-#         # Populate the dataset indicies list and get the total length
-#         for loader in loaders:
-#             num_samples = len(loader.dataset)
-#             self.dataset_indx.append(np.arange(num_samples))
-#             self.cumulative_lens.append(self.cumulative_lens[-1] + num_samples)
-    
-#     def __iter__(self):
-#         while True:
-#             # Randomly select a dataset
-#             dataset_id = np.random.choice(len(self.loaders))
-
-#             # Randomly sample from the selected dataset
-#             sample_idx = np.random.choice(self.dataset_indx[dataset_id])
-
-#             # Get the relative sample index
-#             # relative_sample_idx = sample_idx - self.cumulative_lens[dataset_id]
-
-#             # Yield sample along with the dataset ID (based on index)
-#             yield self.loaders[dataset_id].dataset[sample_idx], sample_idx, dataset_id
 
 class CombinedSampler:
     def __init__(self, loaders):
