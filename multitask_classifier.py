@@ -220,6 +220,10 @@ def train_multitask(args):
     sst_best_dev_acc = 0
     para_best_dev_acc = 0
     sts_best_dev_acc = 0
+    # Initialize variables to track best scores within the epoch
+    sst_dev_acc = 0
+    para_dev_acc = 0
+    sts_dev_acc = 0
 
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
@@ -233,6 +237,11 @@ def train_multitask(args):
         para_num_batches = 0
         sts_train_loss = 0
         sts_num_batches = 0
+
+        # Keeps track of previous epoch accuracies
+        last_epoch_sst_acc = 0
+        last_epoch_para_acc = 0
+        last_epoch_sts_acc = 0
 
         for combined_batch in combined_loader_train:
             # Access batches for each task
@@ -267,9 +276,8 @@ def train_multitask(args):
 
                 if sst_dev_acc > sst_best_dev_acc:
                     sst_best_dev_acc = sst_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
 
-            elif para_batch is not None: # Paraphrase task
+            if para_batch is not None: # Paraphrase task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                     para_batch['para']['token_ids_1'], para_batch['para']['attention_mask_1'],
                     para_batch['para']['token_ids_2'], para_batch['para']['attention_mask_2'],
@@ -310,8 +318,7 @@ def train_multitask(args):
 
                 if para_dev_acc > para_best_dev_acc:
                     para_best_dev_acc = para_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
-            elif sts_batch is not None: # STS task
+            if sts_batch is not None: # STS task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                     sts_batch['sts']['token_ids_1'], sts_batch['sts']['attention_mask_1'],
                     sts_batch['sts']['token_ids_2'], sts_batch['sts']['attention_mask_2'],
@@ -352,7 +359,15 @@ def train_multitask(args):
                     f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}, train acc :: {sts_train_acc :.3f}, dev acc :: {sts_dev_acc :.3f}")
                 if sts_dev_acc > sts_best_dev_acc:
                     sts_best_dev_acc = sts_dev_acc
-                    save_model(model, optimizer, args, config, args.filepath)
+        if sst_best_dev_acc > last_epoch_sst_acc:
+            save_model(model, optimizer, args, config, args.filepath)
+        if para_best_dev_acc > last_epoch_para_acc:
+            save_model(model, optimizer, args, config, args.filepath)
+        if sts_best_dev_acc > last_epoch_sts_acc:
+            save_model(model, optimizer, args, config, args.filepath)
+        last_epoch_sst_acc = sst_best_dev_acc
+        last_epoch_para_acc = para_best_dev_acc
+        last_epoch_sts_acc = sts_best_dev_acc
 
 
 def test_multitask(args):
