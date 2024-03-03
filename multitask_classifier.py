@@ -349,7 +349,7 @@ def train_multitask(args):
         if (sts_num_batches != 0) :
             sts_train_loss = sts_train_loss / (sts_num_batches)
 
-        # print("train accuracies and correlation")
+        # print("train accuracies and correlation") 
         # sst_train_acc, _, _, \
         #     para_train_acc, _ , _, \
         #     train_sts_corr, _ , _  = model_eval_multitask(sst_train_dataloader,
@@ -369,15 +369,20 @@ def train_multitask(args):
         print(
             f"Epoch {epoch}: SST dev acc :: {sst_dev_acc :.3f}, para dev acc :: {para_dev_acc :.3f}, STS dev corr :: {sts_dev_acc :.3f}")
 
-        if sst_dev_acc > last_epoch_sst_acc:
+        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (last_epoch_sst_acc + last_epoch_para_acc + last_epoch_sts_acc) ):
             save_model(model, optimizer, args, config, args.filepath)
             last_epoch_sst_acc = sst_dev_acc
-        if para_dev_acc > last_epoch_para_acc:
-            save_model(model, optimizer, args, config, args.filepath)
             last_epoch_para_acc = para_dev_acc
-        if sts_dev_acc > last_epoch_sts_acc:
-            save_model(model, optimizer, args, config, args.filepath)
             last_epoch_sts_acc = sts_dev_acc
+        # if sst_dev_acc > last_epoch_sst_acc:
+        #     save_model(model, optimizer, args, config, args.filepath)
+        #     last_epoch_sst_acc = sst_dev_acc
+        # if para_dev_acc > last_epoch_para_acc:
+        #     save_model(model, optimizer, args, config, args.filepath)
+        #     last_epoch_para_acc = para_dev_acc
+        # if sts_dev_acc > last_epoch_sts_acc:
+        #     save_model(model, optimizer, args, config, args.filepath)
+        #     last_epoch_sts_acc = sts_dev_acc
          
 
         print(f"Epoch {epoch}: final sst acc :: {last_epoch_sst_acc :.3f},final para acc :: {last_epoch_para_acc :.3f}, final sts corr :: {last_epoch_sts_acc :.3f}")
