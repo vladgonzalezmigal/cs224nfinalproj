@@ -308,16 +308,9 @@ def train_multitask(args):
                                                                                         para_train_dataloader,
                                                                                         sts_train_dataloader, model,
                                                                                         device)
-                print("Para dev accuracy")
-                _, _, _, para_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
-                                                                                    para_dev_dataloader,
-                                                                                    sts_dev_dataloader, model,
-                                                                                    device)
                 print(
                     f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}, train acc :: {para_train_acc :.3f}, dev acc :: {para_dev_acc :.3f}")
 
-                if para_dev_acc > para_best_dev_acc:
-                    para_best_dev_acc = para_dev_acc
             if sts_batch is not None: # STS task
                 b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                     sts_batch['token_ids_1'], sts_batch['attention_mask_1'],
@@ -350,15 +343,20 @@ def train_multitask(args):
                                                                                         para_train_dataloader,
                                                                                         sts_train_dataloader, model,
                                                                                         device)
-                print("STS dev accuracy")
-                _, _, _, _, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
-                                                                                    para_dev_dataloader,
-                                                                                    sts_dev_dataloader, model,
-                                                                                    device)
+                
                 print(
                     f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}, train acc :: {sts_train_acc :.3f}, dev acc :: {sts_dev_acc :.3f}")
-                if sts_dev_acc > sts_best_dev_acc:
-                    sts_best_dev_acc = sts_dev_acc
+
+            print("Multitask dev accuracies")
+            _, _, _, para_dev_acc, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
+                                                                                        para_dev_dataloader,
+                                                                                        sts_dev_dataloader, model,
+                                                                                        device)
+            if para_dev_acc > para_best_dev_acc:
+                para_best_dev_acc = para_dev_acc
+            if sts_dev_acc > sts_best_dev_acc:
+                sts_best_dev_acc = sts_dev_acc
+
         if sst_best_dev_acc > last_epoch_sst_acc:
             save_model(model, optimizer, args, config, args.filepath)
         if para_best_dev_acc > last_epoch_para_acc:
