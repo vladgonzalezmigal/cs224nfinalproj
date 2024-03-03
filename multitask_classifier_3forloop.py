@@ -212,6 +212,13 @@ def train_multitask(args):
         para_num_batches = 0
         sts_train_loss = 0
         sts_num_batches = 0
+
+        print("Multitask dev accuracies")
+        _, _, _, para_dev_acc, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
+                                                                                     para_dev_dataloader,
+                                                                                     sts_dev_dataloader, model,
+                                                                                     device)
+        
         for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
@@ -292,11 +299,6 @@ def train_multitask(args):
                 paraphrase_accuracy, para_y_pred, para_sent_ids,
                 sts_corr, sts_y_pred, sts_sent_ids)
         """
-        print("Multitask dev accuracies")
-        _, _, _, para_dev_acc, _, _, sts_dev_acc, *_ = model_eval_multitask(sst_dev_dataloader,
-                                                                                     para_dev_dataloader,
-                                                                                     sts_dev_dataloader, model,
-                                                                                     device)
         print("Multitask train accuracies")
         _, _, _, para_train_acc, _, _, sts_train_acc, *_ =  model_eval_multitask(sst_train_dataloader,
                                                                                       para_train_dataloader,
