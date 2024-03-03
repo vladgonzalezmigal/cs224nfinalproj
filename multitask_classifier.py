@@ -202,7 +202,7 @@ def train_multitask(args):
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
     combined_loader_train = CombinedLoader(train_iterables, 'min_size')
-    combined_loader_dev = CombinedLoader(dev_iterables, 'min_size')
+    combined_loader_dev = CombinedLoader(dev_iterables, 'max_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
