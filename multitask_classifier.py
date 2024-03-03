@@ -201,7 +201,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
+    combined_loader_train = CombinedLoader(train_iterables, 'max_size_cycle')
     combined_loader_dev = CombinedLoader(dev_iterables, 'max_size')
 
     # Init model.
