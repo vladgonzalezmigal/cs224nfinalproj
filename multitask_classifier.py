@@ -118,12 +118,6 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation.
         '''
-        # outputs_1 = self.forward(input_ids_1, attention_mask_1)
-        # outputs_2 = self.forward(input_ids_2, attention_mask_2)
-        # cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
-        # cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
-        # combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
-        # return self.paraphrase_classifier(combined_embeddings)
         cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
         cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
         cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
@@ -137,12 +131,6 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        # outputs_1 = self.forward(input_ids_1, attention_mask_1)
-        # outputs_2 = self.forward(input_ids_2, attention_mask_2)
-        # cls_token_rep_1 = outputs_1["last_hidden_state"][:, 0, :]
-        # cls_token_rep_2 = outputs_2["last_hidden_state"][:, 0, :]
-        # combined_embeddings = torch.cat([cls_token_rep_1, cls_token_rep_2], dim=1)
-        # return self.similarity_classifier(combined_embeddings)
         cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
         cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
         cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
@@ -218,10 +206,6 @@ def train_multitask(args):
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
-    # Initialize variables to track best scores within the epoch
-    sst_dev_acc = 0
-    para_dev_acc = 0
-    sts_dev_acc = 0
 
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
@@ -237,9 +221,9 @@ def train_multitask(args):
         sts_num_batches = 0
 
         # Keeps track of previous epoch accuracies
-        last_epoch_sst_acc = 0
-        last_epoch_para_acc = 0
-        last_epoch_sts_acc = 0
+        best_sst_acc = 0
+        best_para_acc = 0
+        best_sts_acc = 0
 
         for combined_batch in combined_loader_train:
             # Access batches for each task
@@ -264,9 +248,6 @@ def train_multitask(args):
 
                 sst_train_loss += loss.item()
                 sst_num_batches += 1
-
-                # sst_train_loss = sst_train_loss / (sst_num_batches)
-                # sst_train_acc, sst_train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
 
                 print(
                     f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
@@ -295,14 +276,6 @@ def train_multitask(args):
                 para_train_loss += loss.item()
                 para_num_batches += 1
 
-                # para_train_loss = para_train_loss / (para_num_batches)
-
-
-                # print("Para train accuracy")
-                # _, _, _, para_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
-                #                                                                         para_train_dataloader,
-                #                                                                         sts_train_dataloader, model,
-                #                                                                         device)
                 print(
                     f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
 
@@ -331,14 +304,6 @@ def train_multitask(args):
                 sts_train_loss += loss.item()
                 sts_num_batches += 1
 
-                # sts_train_loss = sts_train_loss / (sts_num_batches)
-
-                # print("STS train accuracy")
-                # _, _, _, _, _, _, sts_train_acc, *_ = model_eval_multitask(sst_train_dataloader,
-                #                                                                         para_train_dataloader,
-                #                                                                         sts_train_dataloader, model,
-                #                                                                         device)
-
                 print(
                     f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
         
@@ -349,16 +314,6 @@ def train_multitask(args):
         if (sts_num_batches != 0) :
             sts_train_loss = sts_train_loss / (sts_num_batches)
 
-        # print("train accuracies and correlation") 
-        # sst_train_acc, _, _, \
-        #     para_train_acc, _ , _, \
-        #     train_sts_corr, _ , _  = model_eval_multitask(sst_train_dataloader,
-        #                                                          para_train_dataloader,
-        #                                                          sts_train_dataloader, model,
-        #                                                          device)
-        # print(
-        #     f"Epoch {epoch}: SST train acc :: {sst_train_acc :.3f}, para train acc :: {para_train_acc :.3f}, STS train corr :: {train_sts_corr :.3f}")
-        
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
             para_dev_acc, _ , _, \
@@ -369,23 +324,16 @@ def train_multitask(args):
         print(
             f"Epoch {epoch}: SST dev acc :: {sst_dev_acc :.3f}, para dev acc :: {para_dev_acc :.3f}, STS dev corr :: {sts_dev_acc :.3f}")
 
-        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (last_epoch_sst_acc + last_epoch_para_acc + last_epoch_sts_acc)/3 ):
+        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (best_sst_acc + best_para_acc + best_sts_acc)/3 ):
             save_model(model, optimizer, args, config, args.filepath)
-            last_epoch_sst_acc = sst_dev_acc
-            last_epoch_para_acc = para_dev_acc
-            last_epoch_sts_acc = sts_dev_acc
-        # if sst_dev_acc > last_epoch_sst_acc:
-        #     save_model(model, optimizer, args, config, args.filepath)
-        #     last_epoch_sst_acc = sst_dev_acc
-        # if para_dev_acc > last_epoch_para_acc:
-        #     save_model(model, optimizer, args, config, args.filepath)
-        #     last_epoch_para_acc = para_dev_acc
-        # if sts_dev_acc > last_epoch_sts_acc:
-        #     save_model(model, optimizer, args, config, args.filepath)
-        #     last_epoch_sts_acc = sts_dev_acc
-         
+            if sst_dev_acc > best_sst_acc:
+                best_sst_acc = sst_dev_acc
+            if para_dev_acc > best_para_acc:
+                best_para_acc = para_dev_acc
+            if sts_dev_acc > best_sts_acc:
+                best_sts_acc = sts_dev_acc
 
-        print(f"Epoch {epoch}: final sst acc :: {last_epoch_sst_acc :.3f},final para acc :: {last_epoch_para_acc :.3f}, final sts corr :: {last_epoch_sts_acc :.3f}")
+        print(f"Epoch {epoch}: final sst acc :: {best_sst_acc :.3f},final para acc :: {best_para_acc :.3f}, final sts corr :: {best_sts_acc :.3f}")
 
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
