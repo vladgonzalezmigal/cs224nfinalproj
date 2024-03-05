@@ -25,6 +25,7 @@ from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 from pytorch_lightning.utilities.combined_loader import CombinedLoader
+import copy
 
 
 
@@ -263,11 +264,13 @@ def train_multitask(args):
                         b_mask_1 = b_mask_1.to(device)
                         b_mask_2 = b_mask_2.to(device)
                         b_labels = b_labels.to(device)
+                        b_labels_copy = b_labels.clone()
+                        b_labels_copy[b_labels_copy == 0] = -1  # Replace 0s with -1s
 
                         optimizer.zero_grad()
                         cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                        loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+                        loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
 
                         loss.backward()
                         optimizer.step()
@@ -294,7 +297,8 @@ def train_multitask(args):
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
 
                         cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-                        loss = mse_loss_fn(cosine_sim, b_labels.float())
+                        scaled_sim = (cosine_sim + 1) * 2.5  # Scale from [-1, 1] to [0, 5]
+                        loss = mse_loss_fn(scaled_sim, b_labels.float())
 
                         loss.backward()
                         optimizer.step()
@@ -304,6 +308,9 @@ def train_multitask(args):
 
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
+        sst_train_loss = sst_train_loss / (sst_num_batches)
+        para_train_loss = para_train_loss / (para_num_batches)
+        sts_train_loss = sts_train_loss / (sts_num_batches)
 
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
