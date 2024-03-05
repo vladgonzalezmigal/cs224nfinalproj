@@ -120,10 +120,9 @@ class MultitaskBERT(nn.Module):
         '''
         cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
         cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
-        cosine_similarity = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-        return cosine_similarity
-
-
+        combined_cls_rep = torch.cat((cls_token_rep_1, cls_token_rep_2), dim=1)
+        paraphrase_logit = self.paraphrase_classifier(combined_cls_rep)
+        return paraphrase_logit
 
     def predict_similarity(self,
                            input_ids_1, attention_mask_1,
@@ -189,8 +188,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'max_size')
-    combined_loader_dev = CombinedLoader(dev_iterables, 'max_size')
+    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -226,93 +224,86 @@ def train_multitask(args):
         best_sts_acc = 0
 
         for combined_batch in combined_loader_train:
-            # Access batches for each task
-            sst_batch = combined_batch[0]['sst']
-            para_batch = combined_batch[0]['para']
-            sts_batch = combined_batch[0]['sts']
+            # Randomly shuffle the keys (task names) in the batch
+            task_keys = list(combined_batch[0].keys())
+            random.shuffle(task_keys)
 
-            if sst_batch is not None: # SST task
-                # print(batch)
-                b_ids, b_mask, b_labels = sst_batch['token_ids'], sst_batch['attention_mask'], sst_batch['labels']
+            for task_key in task_keys:
+                task_batch = combined_batch[0][task_key]
 
-                b_ids = b_ids.to(device)
-                b_mask = b_mask.to(device)
-                b_labels = b_labels.to(device)
+                if task_batch is not None:
+                    if task_key == 'sst':  # SST task
+                        b_ids, b_mask, b_labels = task_batch['token_ids'], task_batch['attention_mask'], task_batch[
+                            'labels']
 
-                optimizer.zero_grad()
-                logits = model.predict_sentiment(b_ids, b_mask)
-                loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+                        b_ids = b_ids.to(device)
+                        b_mask = b_mask.to(device)
+                        b_labels = b_labels.to(device)
 
-                loss.backward()
-                optimizer.step()
+                        optimizer.zero_grad()
+                        logits = model.predict_sentiment(b_ids, b_mask)
+                        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
-                sst_train_loss += loss.item()
-                sst_num_batches += 1
+                        loss.backward()
+                        optimizer.step()
 
-                print(
-                    f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
+                        sst_train_loss += loss.item()
+                        sst_num_batches += 1
 
-            if para_batch is not None: # Paraphrase task
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    para_batch['token_ids_1'], para_batch['attention_mask_1'],
-                    para_batch['token_ids_2'], para_batch['attention_mask_2'],
-                    para_batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+                        print(
+                            f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
+                    if task_key == 'para': # Paraphrase task
+                        b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                            task_batch['token_ids_1'], task_batch['attention_mask_1'],
+                            task_batch['token_ids_2'], task_batch['attention_mask_2'],
+                            task_batch['labels']
+                        )
+                        b_ids_1 = b_input_ids_1.to(device)
+                        b_ids_2 = b_input_ids_2.to(device)
+                        b_mask_1 = b_mask_1.to(device)
+                        b_mask_2 = b_mask_2.to(device)
+                        b_labels = b_labels.to(device)
 
+                        optimizer.zero_grad()
+                        cls_token_rep_1, cls_token_rep_2 = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2,
+                                                                                    b_mask_2)
+                        loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
+                        loss.backward()
+                        optimizer.step()
 
-                loss.backward()
-                optimizer.step()
+                        para_train_loss += loss.item()
+                        para_num_batches += 1
 
-                para_train_loss += loss.item()
-                para_num_batches += 1
+                        print(
+                            f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
+                    if task_key == 'sts': # STS task
+                        b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
+                            task_batch['token_ids_1'], task_batch['attention_mask_1'],
+                            task_batch['token_ids_2'], task_batch['attention_mask_2'],
+                            task_batch['labels']
+                        )
+                        b_ids_1 = b_input_ids_1.to(device)
+                        b_ids_2 = b_input_ids_2.to(device)
+                        b_mask_1 = b_mask_1.to(device)
+                        b_mask_2 = b_mask_2.to(device)
+                        b_labels = b_labels.to(device)
 
-                print(
-                    f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
+                        optimizer.zero_grad()
+                        cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                        cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
 
-            if sts_batch is not None: # STS task
-                b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
-                    sts_batch['token_ids_1'], sts_batch['attention_mask_1'],
-                    sts_batch['token_ids_2'], sts_batch['attention_mask_2'],
-                    sts_batch['labels']
-                )
-                b_ids_1 = b_input_ids_1.to(device)
-                b_ids_2 = b_input_ids_2.to(device)
-                b_mask_1 = b_mask_1.to(device)
-                b_mask_2 = b_mask_2.to(device)
-                b_labels = b_labels.to(device)
+                        cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
+                        loss = mse_loss_fn(cosine_sim, b_labels.float())
 
-                optimizer.zero_grad()
-                cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
-                cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
+                        loss.backward()
+                        optimizer.step()
 
-                cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
-                loss = mse_loss_fn(cosine_sim, b_labels.float())
+                        sts_train_loss += loss.item()
+                        sts_num_batches += 1
 
-                loss.backward()
-                optimizer.step()
-
-                sts_train_loss += loss.item()
-                sts_num_batches += 1
-
-                print(
-                    f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
-        
-        if (sst_num_batches != 0):
-            sst_train_loss = sst_train_loss / (sst_num_batches)
-        if (para_num_batches != 0):
-            para_train_loss = para_train_loss / (para_num_batches)
-        if (sts_num_batches != 0) :
-            sts_train_loss = sts_train_loss / (sts_num_batches)
+                        print(
+                            f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
 
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
@@ -326,12 +317,9 @@ def train_multitask(args):
 
         if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (best_sst_acc + best_para_acc + best_sts_acc)/3 ):
             save_model(model, optimizer, args, config, args.filepath)
-            if sst_dev_acc > best_sst_acc:
-                best_sst_acc = sst_dev_acc
-            if para_dev_acc > best_para_acc:
-                best_para_acc = para_dev_acc
-            if sts_dev_acc > best_sts_acc:
-                best_sts_acc = sts_dev_acc
+            best_sst_acc = sst_dev_acc
+            best_para_acc = para_dev_acc
+            best_sts_acc = sts_dev_acc
 
         print(f"Epoch {epoch}: final sst acc :: {best_sst_acc :.3f},final para acc :: {best_para_acc :.3f}, final sts corr :: {best_sts_acc :.3f}")
 
