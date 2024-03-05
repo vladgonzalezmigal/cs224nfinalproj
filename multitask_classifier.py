@@ -265,8 +265,8 @@ def train_multitask(args):
                         b_labels = b_labels.to(device)
 
                         optimizer.zero_grad()
-                        cls_token_rep_1, cls_token_rep_2 = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2,
-                                                                                    b_mask_2)
+                        cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
+                        cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
                         loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels)
 
                         loss.backward()
