@@ -369,7 +369,7 @@ def train_multitask(args):
         print(
             f"Epoch {epoch}: SST dev acc :: {sst_dev_acc :.3f}, para dev acc :: {para_dev_acc :.3f}, STS dev corr :: {sts_dev_acc :.3f}")
 
-        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (last_epoch_sst_acc + last_epoch_para_acc + last_epoch_sts_acc) ):
+        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (last_epoch_sst_acc + last_epoch_para_acc + last_epoch_sts_acc)/3 ):
             save_model(model, optimizer, args, config, args.filepath)
             last_epoch_sst_acc = sst_dev_acc
             last_epoch_para_acc = para_dev_acc
