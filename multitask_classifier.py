@@ -189,7 +189,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
+    combined_loader_train = CombinedLoader(train_iterables, 'max_size_cycle')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -322,7 +322,7 @@ def train_multitask(args):
         print(
             f"Epoch {epoch}: SST dev acc :: {sst_dev_acc :.3f}, para dev acc :: {para_dev_acc :.3f}, STS dev corr :: {sts_dev_acc :.3f}")
 
-        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (best_sst_acc + best_para_acc + best_sts_acc)/3 ):
+        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (best_sst_acc + best_para_acc + best_sts_acc)/3):
             save_model(model, optimizer, args, config, args.filepath)
             best_sst_acc = sst_dev_acc
             best_para_acc = para_dev_acc
