@@ -53,7 +53,6 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
@@ -82,7 +81,6 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, self.num_sentiment_labels)
         self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_paraphrase_labels)
         self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_similarity_labels)
-
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -228,6 +226,7 @@ def train_multitask(args):
         best_sts_acc = 0
 
         task_losses = {'sst': 0.0, 'para': 0.0, 'sts': 0.0}
+        num_examples = {'sst': 0, 'para': 0, 'sts': 0}
         total_loss = 0
 
         for combined_batch in combined_loader_train:
@@ -250,13 +249,9 @@ def train_multitask(args):
                         logits = model.predict_sentiment(b_ids, b_mask)
                         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
-                        """
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                        """
                         sst_train_loss += loss.item()
                         sst_num_batches += 1
+                        num_examples['sst'] += len(b_labels)
 
                         print(
                             f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
@@ -278,14 +273,9 @@ def train_multitask(args):
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
                         loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
 
-                        """
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                        """
-
                         para_train_loss += loss.item()
                         para_num_batches += 1
+                        num_examples['para'] += len(b_labels)
 
                         print(
                             f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
@@ -308,14 +298,9 @@ def train_multitask(args):
                         scaled_sim = (cosine_sim + 1) * 2.5  # Scale from [-1, 1] to [0, 5]
                         loss = mse_loss_fn(scaled_sim, b_labels.float())
 
-                        """
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-                        """
-
                         sts_train_loss += loss.item()
                         sts_num_batches += 1
+                        num_examples['sts'] += len(b_labels)
 
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
@@ -330,12 +315,11 @@ def train_multitask(args):
                     optimizer.step()
 
         # Adjust weights
-        for task in task_losses:
-            task_losses[task] /= sst_num_batches if task == 'sst' else para_num_batches if task == 'para' else sts_num_batches
-        total_loss = sum(task_losses.values())
+        average_losses = {task: task_losses[task] / num_examples[task] for task in task_losses}
+        total_loss = sum(average_losses.values())
 
         for task in task_weights: # Prioritize tasks with lower performance
-            task_weights[task] = task_losses[task] / total_loss * len(task_weights)
+            task_weights[task] = task_losses[task] / (total_loss * len(task_weights))
 
         # Normalize task weights so they sum to the number of tasks
         weight_sum = sum(task_weights.values())
