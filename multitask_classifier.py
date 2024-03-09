@@ -189,7 +189,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'max_size_cycle')
+    combined_loader_train = CombinedLoader(train_iterables, 'max_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -209,6 +209,9 @@ def train_multitask(args):
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
 
+    # Initialize weights for dynamic task weighting
+    task_weights = {'sst': 1.0, 'para': 1.0, 'sts': 1.0}
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -223,6 +226,9 @@ def train_multitask(args):
         best_sst_acc = 0
         best_para_acc = 0
         best_sts_acc = 0
+
+        task_losses = {'sst': 0.0, 'para': 0.0, 'sts': 0.0}
+        total_loss = 0
 
         for combined_batch in combined_loader_train:
             # Randomly shuffle the keys (task names) in the batch
@@ -241,13 +247,14 @@ def train_multitask(args):
                         b_mask = b_mask.to(device)
                         b_labels = b_labels.to(device)
 
-                        optimizer.zero_grad()
                         logits = model.predict_sentiment(b_ids, b_mask)
                         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
+                        """
+                        optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
-
+                        """
                         sst_train_loss += loss.item()
                         sst_num_batches += 1
 
@@ -267,13 +274,15 @@ def train_multitask(args):
                         b_labels_copy = b_labels.clone()
                         b_labels_copy[b_labels_copy == 0] = -1  # Replace 0s with -1s
 
-                        optimizer.zero_grad()
                         cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
                         loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
 
+                        """
+                        optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
+                        """
 
                         para_train_loss += loss.item()
                         para_num_batches += 1
@@ -292,7 +301,6 @@ def train_multitask(args):
                         b_mask_2 = b_mask_2.to(device)
                         b_labels = b_labels.to(device)
 
-                        optimizer.zero_grad()
                         cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
 
@@ -300,14 +308,42 @@ def train_multitask(args):
                         scaled_sim = (cosine_sim + 1) * 2.5  # Scale from [-1, 1] to [0, 5]
                         loss = mse_loss_fn(scaled_sim, b_labels.float())
 
+                        """
+                        optimizer.zero_grad()
                         loss.backward()
                         optimizer.step()
+                        """
 
                         sts_train_loss += loss.item()
                         sts_num_batches += 1
 
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
+                    # Incorporate task weights into model training
+                    weighted_loss = task_weights[task_key] * loss
+                    total_loss += weighted_loss.item()
+                    task_losses[task_key] += loss.item()
+
+                    # Back propagate the weighted loss
+                    optimizer.zero_grad()
+                    weighted_loss.backward()
+                    optimizer.step()
+
+        # Adjust weights
+        for task in task_losses:
+            task_losses[task] /= sst_num_batches if task == 'sst' else para_num_batches if task == 'para' else sts_num_batches
+        total_loss = sum(task_losses.values())
+
+        for task in task_weights: # Prioritize tasks with lower performance
+            task_weights[task] = task_losses[task] / total_loss * len(task_weights)
+
+        # Normalize task weights so they sum to the number of tasks
+        weight_sum = sum(task_weights.values())
+        for task in task_weights:
+            task_weights[task] *= len(task_weights) / weight_sum
+
+        print(f"Epoch {epoch}: Task weights: {task_weights}")
+
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
         sts_train_loss = sts_train_loss / (sts_num_batches)
