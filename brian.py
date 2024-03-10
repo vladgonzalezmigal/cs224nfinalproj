@@ -4,146 +4,93 @@ import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
 
-# class BertSelfAttention(nn.Module):
-#   def __init__(self, config):
-#     super().__init__()
-
-#     self.num_attention_heads = config.num_attention_heads
-#     self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#     self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-#     # Initialize the linear transformation layers for key, value, query.
-#     self.query = nn.Linear(config.hidden_size, self.all_head_size)
-#     self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#     self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#     # This dropout is applied to normalized attention scores following the original
-#     # implementation of transformer. Although it is a bit unusual, we empirically
-#     # observe that it yields better performance.
-#     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-
-#   def transform(self, x, linear_layer):
-#     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
-#     bs, seq_len = x.shape[:2]
-#     proj = linear_layer(x)
-#     # Next, we need to produce multiple heads for the proj. This is done by spliting the
-#     # hidden state to self.num_attention_heads, each of size self.attention_head_size.
-#     proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
-#     # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
-#     proj = proj.transpose(1, 2)
-#     return proj
-
-#   def attention(self, key, query, value, attention_mask):
-#     # Each attention is calculated following eq. (1) of https://arxiv.org/pdf/1706.03762.pdf.
-#     # Attention scores are calculated by multiplying the key and query to obtain
-#     # a score matrix S of size [bs, num_attention_heads, seq_len, seq_len].
-#     # S[*, i, j, k] represents the (unnormalized) attention score between the j-th and k-th
-#     # token, given by i-th attention head.
-#     # Before normalizing the scores, use the attention mask to mask out the padding token scores.
-#     # Note that the attention mask distinguishes between non-padding tokens (with a value of 0)
-#     # and padding tokens (with a value of a large negative number).
-
-#     # Make sure to:
-#     # - Normalize the scores with softmax.
-#     # - Multiply the attention scores with the value to get back weighted values.
-#     # - Before returning, concatenate multi-heads to recover the original shape:
-#     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
-#     S = torch.matmul(query, key.transpose(-2, -1))
-#     d_k = key.shape[-1] ** 0.5
-#     S = (S + attention_mask) / d_k
-#     m = nn.Softmax(dim=-1)
-#     softmax_S = m(S)
-#     weighted_vals = torch.matmul(softmax_S, value)
-#     weighted_vals = weighted_vals.transpose(1, 2).contiguous()
-#     return weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
-
-#   def forward(self, hidden_states, attention_mask):
-#     """
-#     hidden_states: [bs, seq_len, hidden_state]
-#     attention_mask: [bs, 1, 1, seq_len]
-#     output: [bs, seq_len, hidden_state]
-#     """
-#     # First, we have to generate the key, value, query for each token for multi-head attention
-#     # using self.transform (more details inside the function).
-#     # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
-#     key_layer = self.transform(hidden_states, self.key)
-#     value_layer = self.transform(hidden_states, self.value)
-#     query_layer = self.transform(hidden_states, self.query)
-#     # Calculate the multi-head attention.
-#     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
-#     return attn_value
-
 class PositionAwareAttention(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.hidden_size = config.hidden_size
-        self.num_attention_heads = config.num_attention_heads
+  def __init__(self, config):
+    super().__init__()
 
-        # Linear transformations for key, query, and value
-        self.query = nn.Linear(self.hidden_size, self.hidden_size)
-        self.key = nn.Linear(self.hidden_size, self.hidden_size)
-        self.value = nn.Linear(self.hidden_size, self.hidden_size)
+    self.num_attention_heads = config.num_attention_heads
+    self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+    self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        # Linear mappings for position-aware attention
-        self.position_linear_alpha = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        self.position_linear_beta = nn.Linear(self.hidden_size * 2, self.hidden_size)
+    # Initialize the linear transformation layers for key, value, query.
+    self.query = nn.Linear(config.hidden_size, self.all_head_size)
+    self.key = nn.Linear(config.hidden_size, self.all_head_size)
+    self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
-        # Dropout layer
-        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+    # Linear mapping for position-aware attention
+    self.position_linear_beta = nn.Linear(config.hidden_size, config.hidden_size)
 
-    def compute_alpha(self, hidden_states):
-        # Compute fi using the compatibility function
-        fi = torch.tanh(hidden_states @ self.position_linear_alpha.weight.t() + self.position_linear_alpha.bias)
-        # Compute alpha using softmax
-        alpha = F.softmax(fi, dim=-1)
-        return alpha
+    # This dropout is applied to normalized attention scores following the original
+    # implementation of transformer. Although it is a bit unusual, we empirically
+    # observe that it yields better performance.
+    self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
-    def compute_beta(self, hidden_states):
-        # Extract word embeddings (first half of the hidden states)
-        word_embeddings = hidden_states[:, :hidden_states.size(1) // 2]
-        # Extract position embeddings (second half of the hidden states)
-        position_embeddings = hidden_states[:, hidden_states.size(1) // 2:]
-        # Compute the mean of word and position embeddings separately
-        word_mean = torch.mean(word_embeddings, dim=1)
-        position_mean = torch.mean(position_embeddings, dim=1)
-        # Concatenate word and position means
-        h_bar = torch.cat((word_mean, position_mean), dim=-1)
-        # Compute gi using the compatibility function
-        gi = torch.tanh(h_bar @ self.position_linear_beta.weight.t() + self.position_linear_beta.bias)
-        # Compute beta using softmax
-        beta = F.softmax(gi, dim=-1)
-        return beta
+  def transform(self, x, linear_layer):
+    # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
+    bs, seq_len = x.shape[:2]
+    proj = linear_layer(x)
+    # Next, we need to produce multiple heads for the proj. This is done by spliting the
+    # hidden state to self.num_attention_heads, each of size self.attention_head_size.
+    proj = proj.view(bs, seq_len, self.num_attention_heads, self.attention_head_size)
+    # By proper transpose, we have proj of size [bs, num_attention_heads, seq_len, attention_head_size].
+    proj = proj.transpose(1, 2)
+    return proj
 
-    def forward(self, hidden_states, attention_mask):
-        key_layer = self.key(hidden_states)
-        value_layer = self.value(hidden_states)
-        query_layer = self.query(hidden_states)
+  def compute_beta(self, hidden_states):
+    # Compute the mean of word embeddings
+    word_mean = torch.mean(hidden_states[:, :hidden_states.size(1) // 2], dim=1)
+    # Compute the mean of position embeddings
+    pos_mean = torch.mean(hidden_states[:, hidden_states.size(1) // 2:], dim=1)
+    # Concatenate word and position means
+    h_bar = torch.cat((word_mean, pos_mean), dim=-1)
+    # Compute gi using the compatibility function
+    gi = torch.tanh(h_bar @ self.position_linear_beta.weight.t() + self.position_linear_beta.bias)
+    # Compute beta using softmax
+    beta = F.softmax(gi, dim=-1)
+    return beta
+  
+  def attention(self, key, query, value, beta, attention_mask):
+    # Each attention is calculated following eq. (1) of https://arxiv.org/pdf/1706.03762.pdf.
+    # Attention scores are calculated by multiplying the key and query to obtain
+    # a score matrix S of size [bs, num_attention_heads, seq_len, seq_len].
+    # S[*, i, j, k] represents the (unnormalized) attention score between the j-th and k-th
+    # token, given by i-th attention head.
+    # Before normalizing the scores, use the attention mask to mask out the padding token scores.
+    # Note that the attention mask distinguishes between non-padding tokens (with a value of 0)
+    # and padding tokens (with a value of a large negative number).
 
-        # Compute alpha and beta
-        alpha = self.compute_alpha(hidden_states)
-        beta = self.compute_beta(hidden_states)
+    # Make sure to:
+    # - Normalize the scores with softmax.
+    # - Multiply the attention scores with the value to get back weighted values.
+    # - Before returning, concatenate multi-heads to recover the original shape:
+    #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
+    S = torch.matmul(query, key.transpose(-2, -1))
+    d_k = key.shape[-1] ** 0.5
+    S = (S + attention_mask) / d_k
+    m = nn.Softmax(dim=-1)
+    softmax_S = m(S)
+    weighted_vals = torch.matmul(softmax_S, value)
+    weighted_vals = weighted_vals.transpose(1, 2).contiguous()
+    weighted_vals = torch.matmul(beta, weighted_vals)
+    return weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
 
-        # Compute attention scores
-        S = torch.matmul(query_layer, key_layer.transpose(-2, -1))
-        S = S / (self.hidden_size ** 0.5)
-        S = S + attention_mask
-
-        # Compute attention weights using alpha and beta
-        alpha_expanded = alpha.unsqueeze(1).unsqueeze(1)
-        beta_expanded = beta.unsqueeze(1).unsqueeze(1)
-        weighted_alpha = alpha_expanded * S
-        weighted_beta = beta_expanded * S.transpose(-2, -1)
-
-        # Compute attention output
-        weighted_values_alpha = torch.matmul(weighted_alpha, value_layer)
-        weighted_values_beta = torch.matmul(weighted_beta, value_layer)
-
-        # Combine attention outputs
-        weighted_values = weighted_values_alpha + weighted_values_beta
-
-        # Apply dropout
-        output = self.dropout(weighted_values)
-
-        return output
+  def forward(self, hidden_states, attention_mask):
+    """
+    hidden_states: [bs, seq_len, hidden_state]
+    attention_mask: [bs, 1, 1, seq_len]
+    output: [bs, seq_len, hidden_state]
+    """
+    # First, we have to generate the key, value, query for each token for multi-head attention
+    # using self.transform (more details inside the function).
+    # Size of *_layer is [bs, num_attention_heads, seq_len, attention_head_size].
+    key_layer = self.transform(hidden_states, self.key)
+    value_layer = self.transform(hidden_states, self.value)
+    query_layer = self.transform(hidden_states, self.query)
+    # Get beta
+    beta = self.compute_beta(hidden_states)
+    # Calculate the multi-head attention.
+    attn_value = self.attention(key_layer, query_layer, value_layer, beta, attention_mask)
+    return attn_value
 
 
 class BertLayer(nn.Module):
