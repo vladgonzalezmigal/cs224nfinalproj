@@ -18,7 +18,7 @@ class PositionAwareAttention(nn.Module):
     self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
     # Linear mapping for position-aware attention
-    self.position_linear_beta = nn.Linear(config.hidden_size, config.hidden_size)
+    self.position_linear_beta = nn.Linear(config.hidden_size * 2, config.hidden_size)
 
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
@@ -69,11 +69,13 @@ class PositionAwareAttention(nn.Module):
     S = (S + attention_mask) / d_k
     m = nn.Softmax(dim=-1)
     softmax_S = m(S)
-    beta_expanded = beta.unsqueeze(1).unsqueeze(1)
-    weighted_beta = beta_expanded * softmax_S.transpose(-2, -1)
-    weighted_vals = torch.matmul(weighted_beta, value)
+    weighted_vals = torch.matmul(softmax_S, value)
     weighted_vals = weighted_vals.transpose(1, 2).contiguous()
-    return weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
+    output =  weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
+    # Apply caculated beta weights on self attention output
+    beta_expanded = beta.unsqueeze(1).repeat(1,output.shape[1],1)
+    output_beta = beta_expanded * output
+    return output_beta
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -91,7 +93,7 @@ class PositionAwareAttention(nn.Module):
     beta = self.compute_beta(hidden_states)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, beta, attention_mask)
-    return attn_value
+    return self.dropout(attn_value)
 
 
 class BertLayer(nn.Module):
