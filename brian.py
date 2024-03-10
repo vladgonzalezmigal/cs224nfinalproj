@@ -69,9 +69,10 @@ class PositionAwareAttention(nn.Module):
     S = (S + attention_mask) / d_k
     m = nn.Softmax(dim=-1)
     softmax_S = m(S)
-    weighted_vals = torch.matmul(softmax_S, value)
+    beta_expanded = beta.unsqueeze(1).unsqueeze(1)
+    weighted_beta = beta_expanded * softmax_S.transpose(-2, -1)
+    weighted_vals = torch.matmul(weighted_beta, value)
     weighted_vals = weighted_vals.transpose(1, 2).contiguous()
-    weighted_vals = torch.matmul(beta, weighted_vals)
     return weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
 
   def forward(self, hidden_states, attention_mask):
