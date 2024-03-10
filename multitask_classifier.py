@@ -276,9 +276,12 @@ def train_multitask(args):
                         optimizer.step()
 
                         # Generate adversarial examples using Fast Gradient Sign Method (FGSM)
-                        b_ids.requires_grad = True
+                        b_ids_float = b_ids.float() 
+                        b_ids_float.requires_grad = True
+                        fgsm_logits = model.predict_sentiment(b_ids, b_mask)
+                        fgsm_loss = F.cross_entropy(fgsm_logits, b_labels.view(-1), reduction='sum') / args.batch_size
                         model.zero_grad()
-                        loss.backward()
+                        fgsm_loss.backward(retain_graph=True)
                         adversarial_examples = (b_ids + epsilon * b_ids.grad.sign()).detach()
                         b_ids.requires_grad = False
 
