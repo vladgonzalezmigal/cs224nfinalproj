@@ -21,7 +21,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from bert import BertModel
+from brian import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 from pytorch_lightning.utilities.combined_loader import CombinedLoader
