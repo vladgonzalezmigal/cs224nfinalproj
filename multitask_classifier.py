@@ -209,6 +209,9 @@ def train_multitask(args):
 
     # Initialize weights for dynamic task weighting
     task_weights = {'sst': 1.0, 'para': 1.0, 'sts': 1.0}
+    average_losses = {'sst': 0.0, 'para': 0.0, 'sts': 0.0}
+    loss_smoothing_factor = 0.1
+    epsilon = 0.01
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -255,6 +258,40 @@ def train_multitask(args):
 
                         print(
                             f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
+
+                        # Update the running average loss for the task
+                        average_losses['sst'] = (1 - loss_smoothing_factor) * average_losses[
+                            'sst'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss / (
+                                    average_losses['sst'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['sst'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['sst'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        optimizer.zero_grad()
+                        weighted_loss.backward()
+                        optimizer.step()
+
+                        # Generate adversarial examples using Fast Gradient Sign Method (FGSM)
+                        b_ids.requires_grad = True
+                        model.zero_grad()
+                        loss.backward()
+                        adversarial_examples = (b_ids + epsilon * b_ids.grad.sign()).detach()
+                        b_ids.requires_grad = False
+
+                        # Forward pass with adversarial examples
+                        adversarial_logits = model.predict_sentiment(adversarial_examples, b_mask)
+                        adversarial_loss = F.cross_entropy(adversarial_logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
+                        # Backward pass and update with adversarial examples
+                        optimizer.zero_grad()
+                        adversarial_loss.backward()
+                        optimizer.step()
+
+
                     if task_key == 'para': # Paraphrase task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -279,6 +316,23 @@ def train_multitask(args):
 
                         print(
                             f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
+
+                        # Update the running average loss for the task
+                        average_losses['para'] = (1 - loss_smoothing_factor) * average_losses[
+                            'para'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss / (
+                                average_losses['para'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['para'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['para'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        optimizer.zero_grad()
+                        weighted_loss.backward()
+                        optimizer.step()
+
                     if task_key == 'sts': # STS task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -304,15 +358,22 @@ def train_multitask(args):
 
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
-                    # Incorporate task weights into model training
-                    weighted_loss = task_weights[task_key] * loss
-                    total_loss += weighted_loss.item()
-                    task_losses[task_key] += loss.item()
 
-                    # Back propagate the weighted loss
-                    optimizer.zero_grad()
-                    weighted_loss.backward()
-                    optimizer.step()
+                        # Update the running average loss for the task
+                        average_losses['sts'] = (1 - loss_smoothing_factor) * average_losses[
+                            'sts'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss.item() / (
+                                average_losses['sts'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['sts'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['sts'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        optimizer.zero_grad()
+                        weighted_loss.backward()
+                        optimizer.step()
 
         # Adjust weights
         average_losses = {task: task_losses[task] / num_examples[task] for task in task_losses}
@@ -327,10 +388,6 @@ def train_multitask(args):
             task_weights[task] *= len(task_weights) / weight_sum
 
         print(f"Epoch {epoch}: Task weights: {task_weights}")
-
-        sst_train_loss = sst_train_loss / (sst_num_batches)
-        para_train_loss = para_train_loss / (para_num_batches)
-        sts_train_loss = sts_train_loss / (sts_num_batches)
 
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
