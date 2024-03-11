@@ -274,7 +274,7 @@ def train_multitask(args):
                         optimizer.zero_grad()
                         weighted_loss.backward()
                         optimizer.step()
-
+                        """
                         # Generate adversarial examples using Fast Gradient Sign Method (FGSM)
                         b_ids_float = b_ids.float() 
                         b_ids_float.requires_grad = True
@@ -293,6 +293,7 @@ def train_multitask(args):
                         optimizer.zero_grad()
                         adversarial_loss.backward()
                         optimizer.step()
+                        """
 
 
                     if task_key == 'para': # Paraphrase task
@@ -366,7 +367,7 @@ def train_multitask(args):
                         average_losses['sts'] = (1 - loss_smoothing_factor) * average_losses[
                             'sts'] + loss_smoothing_factor * loss.item()
                         # Normalize the loss
-                        normalized_loss = loss.item() / (
+                        normalized_loss = loss / (
                                 average_losses['sts'] + 1e-6)  # Prevent division by zero instability
                         # Incorporate task weights into model training
                         weighted_loss = task_weights['sts'] * normalized_loss
