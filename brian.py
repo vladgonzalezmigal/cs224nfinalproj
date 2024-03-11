@@ -36,15 +36,15 @@ class PositionAwareAttention(nn.Module):
     proj = proj.transpose(1, 2)
     return proj
 
-  def compute_beta(self, hidden_states):
+  def compute_beta(self, hidden_states, pos_embeds, word_embeds):
     # Compute the mean of word embeddings
-    word_mean = torch.mean(hidden_states[:, :hidden_states.size(1) // 2], dim=1)
+    word_mean = torch.mean(pos_embeds, dim=1)
     # Compute the mean of position embeddings
-    pos_mean = torch.mean(hidden_states[:, hidden_states.size(1) // 2:], dim=1)
+    pos_mean = torch.mean(word_embeds, dim=1)
     # Concatenate word and position means
     h_bar = torch.cat((word_mean, pos_mean), dim=-1)
     # Compute gi using the compatibility function
-    gi = torch.tanh(h_bar @ self.position_linear_beta.weight.t() + self.position_linear_beta.bias)
+    gi = torch.tanh(self.position_linear_beta(h_bar))
     # Compute beta using softmax
     beta = F.softmax(gi, dim=-1)
     return beta
@@ -77,7 +77,7 @@ class PositionAwareAttention(nn.Module):
     output_beta = beta_expanded * output
     return output_beta
 
-  def forward(self, hidden_states, attention_mask):
+  def forward(self, hidden_states, attention_mask, pos_embeds, word_embeds):
     """
     hidden_states: [bs, seq_len, hidden_state]
     attention_mask: [bs, 1, 1, seq_len]
@@ -90,7 +90,7 @@ class PositionAwareAttention(nn.Module):
     value_layer = self.transform(hidden_states, self.value)
     query_layer = self.transform(hidden_states, self.query)
     # Get beta
-    beta = self.compute_beta(hidden_states)
+    beta = self.compute_beta(hidden_states, pos_embeds, word_embeds)
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, beta, attention_mask)
     return self.dropout(attn_value)
@@ -129,7 +129,7 @@ class BertLayer(nn.Module):
     return ln_layer(added)
 
 
-  def forward(self, hidden_states, attention_mask):
+  def forward(self, hidden_states, attention_mask, pos_embeds, word_embeds):
     """
     hidden_states: either from the embedding layer (first BERT layer) or from the previous BERT layer
     as shown in the left of Figure 1 of https://arxiv.org/pdf/1706.03762.pdf.
@@ -139,7 +139,7 @@ class BertLayer(nn.Module):
     3. A feed forward layer.
     4. An add-norm operation that takes the input and output of the feed forward layer.
     """
-    multi_head_attn_output = self.self_attention.forward(hidden_states, attention_mask)
+    multi_head_attn_output = self.self_attention.forward(hidden_states, attention_mask, pos_embeds, word_embeds)
     # print(multi_head_attn_output.shape, 'sam sherf')
     # print('hidden dims', hidden_states.shape)
     attention_output = self.add_norm(hidden_states, multi_head_attn_output, self.attention_dense,
@@ -221,7 +221,7 @@ class BertModel(BertPreTrainedModel):
     # Pass the hidden states through the encoder layers.
     for i, layer_module in enumerate(self.bert_layers):
       # Feed the encoding from the last bert_layer to the next.
-      hidden_states = layer_module(hidden_states, extended_attention_mask)
+      hidden_states = layer_module(hidden_states, extended_attention_mask, self.pos_embedding, self.word_embedding)
 
     return hidden_states
 
