@@ -121,7 +121,7 @@ class MultitaskBERT(nn.Module):
         '''
         cls_token_rep_1 = self.forward(input_ids_1, attention_mask_1)
         cls_token_rep_2 = self.forward(input_ids_2, attention_mask_2)
-        combined_cls_rep = torch.cat((cls_token_rep_1, cls_token_rep_2), dim=1)
+        combined_cls_rep = torch.cat((cls_token_rep_1, cls_token_rep_2), dim=1) 
         paraphrase_logit = self.paraphrase_classifier(combined_cls_rep)
         return paraphrase_logit
 
@@ -189,7 +189,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
+    combined_loader_train = CombinedLoader(train_iterables, 'max_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -209,6 +209,11 @@ def train_multitask(args):
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
 
+    best_sst_acc = 0
+    best_para_acc = 0
+    best_sts_acc = 0
+    best_dev_score = 0
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -220,9 +225,6 @@ def train_multitask(args):
         sts_num_batches = 0
 
         # Keeps track of previous epoch accuracies
-        best_sst_acc = 0
-        best_para_acc = 0
-        best_sts_acc = 0
 
         for combined_batch in combined_loader_train:
             # Randomly shuffle the keys (task names) in the batch
@@ -265,12 +267,14 @@ def train_multitask(args):
                         b_mask_2 = b_mask_2.to(device)
                         b_labels = b_labels.to(device)
                         b_labels_copy = b_labels.clone()
-                        b_labels_copy[b_labels_copy == 0] = -1  # Replace 0s with -1s
+                        # b_labels_copy[b_labels_copy == 0] = -1  # Replace 0s with -1s
 
                         optimizer.zero_grad()
                         cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
-                        loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
+                        # loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
+                        logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                        loss = F.binary_cross_entropy_with_logits(logits.flatten(),b_labels_copy.float())
 
                         loss.backward()
                         optimizer.step()
@@ -321,12 +325,14 @@ def train_multitask(args):
                                                                  device)
         print(
             f"Epoch {epoch}: SST dev acc :: {sst_dev_acc :.3f}, para dev acc :: {para_dev_acc :.3f}, STS dev corr :: {sts_dev_acc :.3f}")
+        sts_dev_norm = (sts_dev_acc + 1) / 2
 
-        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= (best_sst_acc + best_para_acc + best_sts_acc)/3 ):
+        if ((sst_dev_acc + para_dev_acc + sts_dev_norm)/3 >= best_dev_score ):
             save_model(model, optimizer, args, config, args.filepath)
             best_sst_acc = sst_dev_acc
             best_para_acc = para_dev_acc
-            best_sts_acc = sts_dev_acc
+            best_sts_acc = sts_dev_norm
+            best_dev_score = (best_sst_acc + best_para_acc + best_sts_acc)/3 
 
         print(f"Epoch {epoch}: final sst acc :: {best_sst_acc :.3f},final para acc :: {best_para_acc :.3f}, final sts corr :: {best_sts_acc :.3f}")
 
