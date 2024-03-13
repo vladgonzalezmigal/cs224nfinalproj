@@ -277,28 +277,7 @@ def train_multitask(args):
                         optimizer.zero_grad()
                         weighted_loss.backward()
                         optimizer.step()
-                        """
-                        # Generate adversarial examples using Fast Gradient Sign Method (FGSM)
-                        b_ids_float = b_ids.float() 
-                        b_ids_float.requires_grad = True
-                        fgsm_logits = model.predict_sentiment(b_ids, b_mask)
-                        fgsm_loss = F.cross_entropy(fgsm_logits, b_labels.view(-1), reduction='sum') / args.batch_size
-                        model.zero_grad()
-                        fgsm_loss.backward(retain_graph=True)
-                        adversarial_examples = (b_ids + epsilon * b_ids.grad.sign()).detach()
-                        b_ids.requires_grad = False
-
-                        # Forward pass with adversarial examples
-                        adversarial_logits = model.predict_sentiment(adversarial_examples, b_mask)
-                        adversarial_loss = F.cross_entropy(adversarial_logits, b_labels.view(-1), reduction='sum') / args.batch_size
-
-                        # Backward pass and update with adversarial examples
-                        optimizer.zero_grad()
-                        adversarial_loss.backward()
-                        optimizer.step()
-                        """
-
-
+                    
                     if task_key == 'para': # Paraphrase task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -316,7 +295,8 @@ def train_multitask(args):
                         cls_token_rep_1 = model.forward(b_ids_1, b_mask_1)
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
                         logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                        loss = F.binary_cross_entropy_with_logits(logits.flatten(),b_labels_copy.float())
+                        probs = torch.sigmoid(logits)
+                        loss = F.binary_cross_entropy_with_logits(probs.flatten(),b_labels_copy.float())
 
                         para_train_loss += loss.item()
                         para_num_batches += 1
