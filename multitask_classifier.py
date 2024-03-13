@@ -262,7 +262,6 @@ def train_multitask(args):
                         print(
                             f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
 
-                        """
                         # Update the running average loss for the task
                         average_losses['sst'] = (1 - loss_smoothing_factor) * average_losses[
                          'sst'] + loss_smoothing_factor * loss.item()
@@ -273,10 +272,10 @@ def train_multitask(args):
                         weighted_loss = task_weights['sst'] * normalized_loss
                         total_loss += weighted_loss.item()
                         task_losses['sst'] += loss.item()
-                        """
+
                         # Back propagate the weighted loss
                         optimizer.zero_grad()
-                        loss.backward()
+                        weighted_loss.backward()
                         optimizer.step()
                     
                     if task_key == 'para': # Paraphrase task
@@ -306,7 +305,6 @@ def train_multitask(args):
                         print(
                             f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
 
-                        """"
                         # Update the running average loss for the task
                         average_losses['para'] = (1 - loss_smoothing_factor) * average_losses[
                             'para'] + loss_smoothing_factor * loss.item()
@@ -317,11 +315,10 @@ def train_multitask(args):
                         weighted_loss = task_weights['para'] * normalized_loss
                         total_loss += weighted_loss.item()
                         task_losses['para'] += loss.item()
-                        """
 
                         # Back propagate the weighted loss
                         optimizer.zero_grad()
-                        loss.backward()
+                        weighted_loss.backward()
                         optimizer.step()
 
                     if task_key == 'sts': # STS task
@@ -350,7 +347,6 @@ def train_multitask(args):
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
 
-                        """"
                         # Update the running average loss for the task
                         average_losses['sts'] = (1 - loss_smoothing_factor) * average_losses[
                             'sts'] + loss_smoothing_factor * loss.item()
@@ -361,13 +357,12 @@ def train_multitask(args):
                         weighted_loss = task_weights['sts'] * normalized_loss
                         total_loss += weighted_loss.item()
                         task_losses['sts'] += loss.item()
-                        """
 
                         # Back propagate the weighted loss
                         optimizer.zero_grad()
-                        loss.backward()
+                        weighted_loss.backward()
                         optimizer.step()
-        """"
+
         # Adjust weights
         average_losses = {task: task_losses[task] / num_examples[task] for task in task_losses}
         total_loss = sum(average_losses.values())
@@ -383,7 +378,6 @@ def train_multitask(args):
             task_weights[task] *= len(task_weights) / weight_sum
 
         print(f"Epoch {epoch}: Task weights: {task_weights}")
-        """
 
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
@@ -397,7 +391,7 @@ def train_multitask(args):
 
         sts_dev_norm = (sts_dev_acc + 1) / 2
 
-        if ((sst_dev_acc + para_dev_acc + sts_dev_acc)/3 >= best_dev_score):
+        if ((sst_dev_acc + para_dev_acc + sts_dev_norm)/3 >= best_dev_score):
             save_model(model, optimizer, args, config, args.filepath)
             best_sst_acc = sst_dev_acc
             best_para_acc = para_dev_acc
