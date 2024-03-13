@@ -18,7 +18,7 @@ class PositionAwareAttention(nn.Module):
     self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
     # Linear mapping for position-aware attention
-    self.position_linear_beta = nn.Linear(config.hidden_size * 2, config.hidden_size)
+    self.position_linear_beta = nn.Linear(config.hidden_size, config.hidden_size)
 
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
@@ -37,12 +37,9 @@ class PositionAwareAttention(nn.Module):
     return proj
 
   def compute_beta(self, hidden_states, pos_embeds, word_embeds):
-    # Compute the mean of word embeddings
-    word_mean = torch.mean(pos_embeds, dim=1)
-    # Compute the mean of position embeddings
-    pos_mean = torch.mean(word_embeds, dim=1)
-    # Concatenate word and position means
-    h_bar = torch.cat((word_mean, pos_mean), dim=-1)
+    # Concatonate the pos and word embeds
+    comb_embeds = pos_embeds + word_embeds
+    h_bar = torch.mean(comb_embeds, dim=1)
     # Compute gi using the compatibility function
     gi = torch.tanh(self.position_linear_beta(h_bar))
     # Compute beta using softmax
@@ -207,7 +204,7 @@ class BertModel(BertPreTrainedModel):
     return self.embed_dropout(embeddings)
 
 
-  def encode(self, hidden_states, attention_mask):
+  def encode(self, hidden_states, attention_mask, input_ids):
     """
     hidden_states: the output from the embedding layer [batch_size, seq_len, hidden_size]
     attention_mask: [batch_size, seq_len]
@@ -221,7 +218,7 @@ class BertModel(BertPreTrainedModel):
     # Pass the hidden states through the encoder layers.
     for i, layer_module in enumerate(self.bert_layers):
       # Feed the encoding from the last bert_layer to the next.
-      hidden_states = layer_module(hidden_states, extended_attention_mask, self.pos_embedding, self.word_embedding)
+      hidden_states = layer_module(hidden_states, extended_attention_mask, self.pos_embedding(self.position_ids[:, :input_ids.size()[1]]), self.word_embedding(input_ids))
 
     return hidden_states
 
@@ -234,7 +231,7 @@ class BertModel(BertPreTrainedModel):
     embedding_output = self.embed(input_ids=input_ids)
 
     # Feed to a transformer (a stack of BertLayers).
-    sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+    sequence_output = self.encode(embedding_output, attention_mask=attention_mask, input_ids=input_ids)
 
     # Get cls token hidden state.
     first_tk = sequence_output[:, 0]
