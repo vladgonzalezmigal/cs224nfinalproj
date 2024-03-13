@@ -216,7 +216,7 @@ def train_multitask(args):
      # Keeps track of previous epoch accuracies
     best_sst_acc = 0
     best_para_acc = 0
-    best_sts_acc = 0
+    best_sts_dev_norm = 0
     best_dev_score = 0
 
     # Run for the specified number of epochs.
@@ -395,10 +395,8 @@ def train_multitask(args):
             save_model(model, optimizer, args, config, args.filepath)
             best_sst_acc = sst_dev_acc
             best_para_acc = para_dev_acc
-            best_sts_acc = sts_dev_norm
-            best_dev_score = (best_sst_acc + best_para_acc + best_sts_acc)/3 
-
-        print(f"Epoch {epoch}: final sst acc :: {best_sst_acc :.3f},final para acc :: {best_para_acc :.3f}, final sts corr :: {best_sts_acc :.3f}")
+            best_sts_dev_norm = sts_dev_norm
+            best_dev_score = (best_sst_acc + best_para_acc + best_sts_dev_norm)/3
 
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
