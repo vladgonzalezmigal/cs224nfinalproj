@@ -82,7 +82,9 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, self.num_sentiment_labels)
         self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_paraphrase_labels)
         self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_similarity_labels)
-
+        
+        self.hidden = nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE)
+        self.transform = nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE)
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -98,8 +100,6 @@ class MultitaskBERT(nn.Module):
         cls_token_rep = last_hidden_state[:, 0, :]
         # Returns CLS token representations for both sentiment classification and similarity detection
         return cls_token_rep
-
-
 
     def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
@@ -272,9 +272,9 @@ def train_multitask(args):
                         normalized_loss = loss / (
                                     average_losses['sst'] + 1e-6)  # Prevent division by zero instability
                         # Incorporate task weights into model training
-                        # weighted_loss = task_weights['sst'] * normalized_loss
+                        norm_weight = task_weights['sst'] * normalized_loss
                         weighted_loss = task_weights['sst'] * loss
-                        total_loss += weighted_loss.item()
+                        total_loss += norm_weight.item()
                         task_losses['sst'] += loss.item()
 
                         # Back propagate the weighted loss
@@ -317,8 +317,9 @@ def train_multitask(args):
                                 average_losses['para'] + 1e-6)  # Prevent division by zero instability
                         # Incorporate task weights into model training
                         # weighted_loss = task_weights['para'] * normalized_loss
+                        norm_weight = task_weights['para'] * normalized_loss
                         weighted_loss = task_weights['para'] * loss
-                        total_loss += weighted_loss.item()
+                        total_loss += norm_weight.item()
                         task_losses['para'] += loss.item()
 
                         # Back propagate the weighted loss
@@ -360,9 +361,9 @@ def train_multitask(args):
                         normalized_loss = loss / (
                                 average_losses['sts'] + 1e-6)  # Prevent division by zero instability
                         # Incorporate task weights into model training
-                        # weighted_loss = task_weights['sts'] * normalized_loss
+                        weight_norm = task_weights['sts'] * normalized_loss
                         weighted_loss = task_weights['sts'] * loss
-                        total_loss += weighted_loss.item()
+                        total_loss += weight_norm.item()
                         task_losses['sts'] += loss.item()
 
                         # Back propagate the weighted loss
@@ -374,6 +375,7 @@ def train_multitask(args):
             aggregate_loss = sst_weighted_loss + para_weighted_loss + sts_weighted_loss
             aggregate_loss.backward()
             optimizer.step()
+
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
         sts_train_loss = sts_train_loss / (sts_num_batches)

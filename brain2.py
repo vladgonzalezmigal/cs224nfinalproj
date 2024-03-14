@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
 
-class PositionAwareAttention(nn.Module):
+
+class BertSelfAttention(nn.Module):
   def __init__(self, config):
     super().__init__()
 
@@ -16,11 +17,6 @@ class PositionAwareAttention(nn.Module):
     self.query = nn.Linear(config.hidden_size, self.all_head_size)
     self.key = nn.Linear(config.hidden_size, self.all_head_size)
     self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
-    # Linear mapping for position-aware attention
-    self.query_beta = nn.Linear(config.hidden_size, self.all_head_size)
-    self.key_beta = nn.Linear(config.hidden_size, self.all_head_size)
-
     # This dropout is applied to normalized attention scores following the original
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
@@ -37,15 +33,7 @@ class PositionAwareAttention(nn.Module):
     proj = proj.transpose(1, 2)
     return proj
 
-  def compute_beta(self, query, key):
-    # Get gi using tanh()
-    gi = torch.tanh(torch.matmul(query, key.transpose(-2, -1)))
-    # Compute beta using softmax
-    m = nn.Softmax(dim=-1)
-    beta = m(gi)
-    return beta
-  
-  def attention(self, key, query, value, beta, attention_mask):
+  def attention(self, key, query, value, attention_mask):
     # Each attention is calculated following eq. (1) of https://arxiv.org/pdf/1706.03762.pdf.
     # Attention scores are calculated by multiplying the key and query to obtain
     # a score matrix S of size [bs, num_attention_heads, seq_len, seq_len].
@@ -60,20 +48,16 @@ class PositionAwareAttention(nn.Module):
     # - Multiply the attention scores with the value to get back weighted values.
     # - Before returning, concatenate multi-heads to recover the original shape:
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
-    # Calculate self-attention
     S = torch.matmul(query, key.transpose(-2, -1))
     d_k = key.shape[-1] ** 0.5
     S = (S + attention_mask) / d_k
     m = nn.Softmax(dim=-1)
-    alpha = m(S)
-    weighted_vals = torch.matmul(alpha, value)
-    # Apply position-aware weights
-    weighted_vals = torch.matmul(beta, weighted_vals)
+    softmax_S = m(S)
+    weighted_vals = torch.matmul(softmax_S, value)
     weighted_vals = weighted_vals.transpose(1, 2).contiguous()
-    output =  weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
-    return output
+    return weighted_vals.view(weighted_vals.size(0), -1, self.all_head_size)
 
-  def forward(self, hidden_states, attention_mask, pos_embeds, word_embeds):
+  def forward(self, hidden_states, attention_mask):
     """
     hidden_states: [bs, seq_len, hidden_state]
     attention_mask: [bs, 1, 1, seq_len]
@@ -85,21 +69,16 @@ class PositionAwareAttention(nn.Module):
     key_layer = self.transform(hidden_states, self.key)
     value_layer = self.transform(hidden_states, self.value)
     query_layer = self.transform(hidden_states, self.query)
-    # Get beta
-    h_bar = (pos_embeds + word_embeds) / 2.0
-    query_beta_layer = self.transform(h_bar, self.query_beta)
-    key_beta_layer = self.transform(hidden_states, self.key_beta)
-    beta = self.compute_beta(query_beta_layer, key_beta_layer)
     # Calculate the multi-head attention.
-    attn_value = self.attention(key_layer, query_layer, value_layer, beta, attention_mask)
-    return self.dropout(attn_value)
+    attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
+    return attn_value
 
 
 class BertLayer(nn.Module):
   def __init__(self, config):
     super().__init__()
     # Multi-head attention.
-    self.self_attention = PositionAwareAttention(config)
+    self.self_attention = BertSelfAttention(config)
     # Add-norm for multi-head attention.
     self.attention_dense = nn.Linear(config.hidden_size, config.hidden_size)
     self.attention_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -128,7 +107,7 @@ class BertLayer(nn.Module):
     return ln_layer(added)
 
 
-  def forward(self, hidden_states, attention_mask, pos_embeds, word_embeds):
+  def forward(self, hidden_states, attention_mask):
     """
     hidden_states: either from the embedding layer (first BERT layer) or from the previous BERT layer
     as shown in the left of Figure 1 of https://arxiv.org/pdf/1706.03762.pdf.
@@ -138,7 +117,7 @@ class BertLayer(nn.Module):
     3. A feed forward layer.
     4. An add-norm operation that takes the input and output of the feed forward layer.
     """
-    multi_head_attn_output = self.self_attention.forward(hidden_states, attention_mask, pos_embeds, word_embeds)
+    multi_head_attn_output = self.self_attention.forward(hidden_states, attention_mask)
     # print(multi_head_attn_output.shape, 'sam sherf')
     # print('hidden dims', hidden_states.shape)
     attention_output = self.add_norm(hidden_states, multi_head_attn_output, self.attention_dense,
@@ -206,7 +185,7 @@ class BertModel(BertPreTrainedModel):
     return self.embed_dropout(embeddings)
 
 
-  def encode(self, hidden_states, attention_mask, input_ids):
+  def encode(self, hidden_states, attention_mask):
     """
     hidden_states: the output from the embedding layer [batch_size, seq_len, hidden_size]
     attention_mask: [batch_size, seq_len]
@@ -220,7 +199,7 @@ class BertModel(BertPreTrainedModel):
     # Pass the hidden states through the encoder layers.
     for i, layer_module in enumerate(self.bert_layers):
       # Feed the encoding from the last bert_layer to the next.
-      hidden_states = layer_module(hidden_states, extended_attention_mask, self.pos_embedding(self.position_ids[:, :input_ids.size()[1]]), self.word_embedding(input_ids))
+      hidden_states = layer_module(hidden_states, extended_attention_mask)
 
     return hidden_states
 
@@ -233,7 +212,7 @@ class BertModel(BertPreTrainedModel):
     embedding_output = self.embed(input_ids=input_ids)
 
     # Feed to a transformer (a stack of BertLayers).
-    sequence_output = self.encode(embedding_output, attention_mask=attention_mask, input_ids=input_ids)
+    sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
 
     # Get cls token hidden state.
     first_tk = sequence_output[:, 0]
