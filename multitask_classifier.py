@@ -278,8 +278,9 @@ def train_multitask(args):
                         task_losses['sst'] += loss.item()
 
                         # Back propagate the weighted loss
-                        weighted_loss.backward()
-                        optimizer.step()
+                        # weighted_loss.backward()
+                        # optimizer.step()
+                        sst_weighted_loss = weighted_loss
                     if task_key == 'para': # Paraphrase task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -321,8 +322,9 @@ def train_multitask(args):
                         task_losses['para'] += loss.item()
 
                         # Back propagate the weighted loss
-                        weighted_loss.backward()
-                        optimizer.step()
+                        # weighted_loss.backward()
+                        # optimizer.step()
+                        para_weighted_loss = weighted_loss
                     if task_key == 'sts': # STS task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -364,9 +366,14 @@ def train_multitask(args):
                         task_losses['sts'] += loss.item()
 
                         # Back propagate the weighted loss
-                        weighted_loss.backward()
-                        optimizer.step()
+                        # weighted_loss.backward()
+                        # optimizer.step()
+                        sts_weighted_loss = weighted_loss
 
+            # Back propagate on aggregate loss
+            aggregate_loss = sst_weighted_loss + para_weighted_loss + sts_weighted_loss
+            aggregate_loss.backward()
+            optimizer.step()
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
         sts_train_loss = sts_train_loss / (sts_num_batches)
