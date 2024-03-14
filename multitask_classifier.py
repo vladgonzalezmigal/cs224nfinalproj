@@ -209,6 +209,13 @@ def train_multitask(args):
     cosine_loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
     mse_loss_fn = nn.MSELoss()
 
+    task_weights = {'sst': 1.0, 'para': 1.0, 'sts': 1.0}
+    average_losses = {'sst': 0.0, 'para': 0.0, 'sts': 0.0}
+    loss_smoothing_factor = 0.1
+    epsilon = 0.01
+
+    # keep track of previous epoch accuracies
+
     best_sst_acc = 0
     best_para_acc = 0
     best_sts_acc = 0
@@ -225,6 +232,10 @@ def train_multitask(args):
         sts_num_batches = 0
 
         # Keeps track of previous epoch accuracies
+
+        task_losses = {'sst': 0.0, 'para': 0.0, 'sts': 0.0}
+        num_examples = {'sst': 0, 'para': 0, 'sts': 0}
+        total_loss = 0
 
         for combined_batch in combined_loader_train:
             # Randomly shuffle the keys (task names) in the batch
@@ -245,16 +256,29 @@ def train_multitask(args):
 
                         optimizer.zero_grad()
                         logits = model.predict_sentiment(b_ids, b_mask)
-                        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
-
-                        loss.backward()
-                        optimizer.step()
+                        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum')  
 
                         sst_train_loss += loss.item()
                         sst_num_batches += 1
+                        num_examples['sst'] += len(b_labels)
 
-                        print(
+                        print( 
                             f"Epoch {epoch}: SST train loss :: {sst_train_loss :.3f}")
+
+                        # Update the running average loss for the task
+                        average_losses['sst'] = (1 - loss_smoothing_factor) * average_losses[
+                         'sst'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss / (
+                                    average_losses['sst'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['sst'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['sst'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        weighted_loss.backward()
+                        optimizer.step()
                     if task_key == 'para': # Paraphrase task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -276,14 +300,27 @@ def train_multitask(args):
                         logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                         loss = F.binary_cross_entropy_with_logits(logits.flatten(),b_labels_copy.float())
 
-                        loss.backward()
-                        optimizer.step()
-
                         para_train_loss += loss.item()
                         para_num_batches += 1
+                        num_examples['para'] += len(b_labels)
 
                         print(
                             f"Epoch {epoch}: Paraphrase train loss :: {para_train_loss :.3f}")
+
+                        # Update the running average loss for the task
+                        average_losses['para'] = (1 - loss_smoothing_factor) * average_losses[
+                            'para'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss / (
+                                average_losses['para'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['para'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['para'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        weighted_loss.backward()
+                        optimizer.step()
                     if task_key == 'sts': # STS task
                         b_input_ids_1, b_mask_1, b_input_ids_2, b_mask_2, b_labels = (
                             task_batch['token_ids_1'], task_batch['attention_mask_1'],
@@ -304,17 +341,47 @@ def train_multitask(args):
                         scaled_sim = (cosine_sim + 1) * 2.5  # Scale from [-1, 1] to [0, 5]
                         loss = mse_loss_fn(scaled_sim, b_labels.float())
 
-                        loss.backward()
-                        optimizer.step()
 
                         sts_train_loss += loss.item()
                         sts_num_batches += 1
+                        num_examples['sts'] += len(b_labels)
 
                         print(
                             f"Epoch {epoch}: STS train loss :: {sts_train_loss :.3f}")
+
+                        # Update the running average loss for the task
+                        average_losses['sts'] = (1 - loss_smoothing_factor) * average_losses[
+                            'sts'] + loss_smoothing_factor * loss.item()
+                        # Normalize the loss
+                        normalized_loss = loss / (
+                                average_losses['sts'] + 1e-6)  # Prevent division by zero instability
+                        # Incorporate task weights into model training
+                        weighted_loss = task_weights['sts'] * normalized_loss
+                        total_loss += weighted_loss.item()
+                        task_losses['sts'] += loss.item()
+
+                        # Back propagate the weighted loss
+                        weighted_loss.backward()
+                        optimizer.step()
+
         sst_train_loss = sst_train_loss / (sst_num_batches)
         para_train_loss = para_train_loss / (para_num_batches)
         sts_train_loss = sts_train_loss / (sts_num_batches)
+        # Adjust weights
+        average_losses = {task: task_losses[task] / num_examples[task] for task in task_losses}
+        total_loss = sum(average_losses.values())
+
+        weight_alpha = 0.1
+        for task in task_weights: # Prioritize tasks with lower performance
+            new_weight = task_losses[task] / (total_loss * len(task_weights))
+            task_weights[task] = (1 - weight_alpha) * task_weights[task] + weight_alpha * new_weight
+
+        # Normalize task weights so they sum to the number of tasks
+        weight_sum = sum(task_weights.values())
+        for task in task_weights:
+            task_weights[task] *= len(task_weights) / weight_sum
+
+        print(f"Epoch {epoch}: Task weights: {task_weights}")
 
         print("dev accuracies and correlation")
         sst_dev_acc, _, _, \
