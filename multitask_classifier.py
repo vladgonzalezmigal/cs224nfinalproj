@@ -21,7 +21,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from brian import BertModel
+from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
 from pytorch_lightning.utilities.combined_loader import CombinedLoader
@@ -56,7 +56,7 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
-
+ASPECT_SIZE = 4
 
 class MultitaskBERT(nn.Module):
     '''
@@ -79,13 +79,42 @@ class MultitaskBERT(nn.Module):
         self.num_sentiment_labels = 5
         self.num_paraphrase_labels = 1
         self.num_similarity_labels = 1
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, self.num_sentiment_labels)
-        self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_paraphrase_labels)
-        self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE, self.num_similarity_labels)
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE * ASPECT_SIZE, self.num_sentiment_labels)
+        self.paraphrase_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE * ASPECT_SIZE, self.num_paraphrase_labels)
+        self.similarity_classifier = nn.Linear(2 * BERT_HIDDEN_SIZE * ASPECT_SIZE, self.num_similarity_labels)
         
-        self.hidden = nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE)
-        self.transform = nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE)
+        self.alpha_weights = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(ASPECT_SIZE)])
+        self.alpha_biases = nn.ParameterList([nn.Parameter(torch.Tensor(1)) for _ in range(ASPECT_SIZE)])
+        self.beta_weights = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(ASPECT_SIZE)])
+        self.beta_biases = nn.ParameterList([nn.Parameter(torch.Tensor(1)) for _ in range(ASPECT_SIZE)])
 
+        self.coeff_alpha = nn.Parameter(torch.tensor(0.5))
+        self.coeff_beta = nn.Parameter(torch.tensor(0.5))
+        self.R_alpha = 0
+        self.R_beta = 0
+
+        self.ident = torch.eye(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE).cuda()
+                                          
+    def get_z(self, hidden_layers, weight, bias):
+        weighted = weight(hidden_layers)
+        f = torch.tanh(torch.add(torch.bmm(weighted, torch.transpose(hidden_layers, 1, 2)), bias))
+        m = nn.Softmax(dim=-1)
+        alpha = m(f)
+        return {'alpha': alpha, 'z': torch.bmm(alpha, hidden_layers)}
+
+    def get_s(self, hidden_layers, z, h_bar, weight, bias):
+        weighted = weight(h_bar)
+        g = torch.tanh(torch.add(torch.bmm(weighted, torch.transpose(hidden_layers, 1, 2)), bias))
+        m = nn.Softmax(dim=-1)
+        beta = m(g)
+        return {'beta': beta, 's': torch.squeeze(torch.bmm(beta, z), dim=1)}
+
+    def get_R(self, lst, param):
+        M = torch.cat(tuple(d[param] for d in lst), dim=1)
+        M = torch.bmm(M.permute(0, 2, 1), M)
+        M -= self.ident[:M.size(1), :M.size(1)].expand(M.size(0), -1, -1)
+        return torch.norm(M) / M.size(1)
+    
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
         # The final BERT embedding is the hidden state of [CLS] token (the first token)
@@ -93,13 +122,27 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         # Pass input IDs and attention masks to BERT model
+        id_len = torch.sum(input_ids != 0, dim=-1)
         outputs = self.bert(input_ids, attention_mask)
         # Get embeddings matrix
         last_hidden_state = outputs['last_hidden_state']
         # Get CLS token representation
-        cls_token_rep = last_hidden_state[:, 0, :]
-        # Returns CLS token representations for both sentiment classification and similarity detection
-        return cls_token_rep
+        # cls_token_rep = last_hidden_state[:, 0, :]
+        # print(cls_token_rep.shape)
+        # Get embedding outputs
+        # Get mean embedding h_bar from the hidden states and input ids
+        h_bar  = torch.unsqueeze(torch.div(torch.sum(last_hidden_state, dim=1), id_len.float().view(id_len.size(0), 1)), dim=1)
+        alpha_list = [self.get_z(last_hidden_state, weight, bias) for weight,bias in zip(self.alpha_weights, self.alpha_biases)]
+        z_list = [d['z'] for d in alpha_list]
+        beta_list = [self.get_s(last_hidden_state, z, h_bar, weight, bias) for z,weight,bias in zip(z_list, self.beta_weights, self.beta_biases)]
+
+        self.R_alpha = self.get_R(alpha_list, 'alpha')
+        self.R_beta = self.get_R(beta_list, 'beta')
+
+        overall_token = torch.cat(tuple(d['s'] for d in beta_list), dim=1)
+
+        # Returns overall token representations for both sentiment classification and similarity detection
+        return overall_token
 
     def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
@@ -189,7 +232,7 @@ def train_multitask(args):
                                     collate_fn=sts_dev_data.collate_fn)
     train_iterables = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
     dev_iterables = {'sst': sst_dev_dataloader, 'para': para_dev_dataloader, 'sts': sts_dev_dataloader}
-    combined_loader_train = CombinedLoader(train_iterables, 'max_size')
+    combined_loader_train = CombinedLoader(train_iterables, 'min_size')
 
     # Init model.
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -256,7 +299,7 @@ def train_multitask(args):
 
                         optimizer.zero_grad()
                         logits = model.predict_sentiment(b_ids, b_mask)
-                        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum')  
+                        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') + (model.coeff_alpha * model.R_alpha) + (model.coeff_beta * model.R_beta) 
 
                         sst_train_loss += loss.item()
                         sst_num_batches += 1
@@ -300,7 +343,7 @@ def train_multitask(args):
                         cls_token_rep_2 = model.forward(b_ids_2, b_mask_2)
                         # loss = cosine_loss_fn(cls_token_rep_1, cls_token_rep_2, b_labels_copy)
                         logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                        loss = F.binary_cross_entropy_with_logits(logits.flatten(),b_labels_copy.float())
+                        loss = F.binary_cross_entropy_with_logits(logits.flatten(),b_labels_copy.float()) + (model.coeff_alpha * model.R_alpha) + (model.coeff_beta * model.R_beta)
 
                         para_train_loss += loss.item()
                         para_num_batches += 1
@@ -344,7 +387,7 @@ def train_multitask(args):
 
                         cosine_sim = F.cosine_similarity(cls_token_rep_1, cls_token_rep_2)
                         scaled_sim = (cosine_sim + 1) * 2.5  # Scale from [-1, 1] to [0, 5]
-                        loss = mse_loss_fn(scaled_sim, b_labels.float())
+                        loss = mse_loss_fn(scaled_sim, b_labels.float()) + (model.coeff_alpha * model.R_alpha) + (model.coeff_beta * model.R_beta)
 
 
                         sts_train_loss += loss.item()
